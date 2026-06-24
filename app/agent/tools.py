@@ -796,6 +796,7 @@ def generate_8d_report_tool(
     batch_size: str = "12",
     template: str = "generic-defect",
     five_why_steps: str = "",
+    rc_summary: str = "",
     auto_fill: bool = False
 ) -> str:
     """生成专业的汽车行业 8D 报告（同时生成 xlsx 和 docx 两个文件）。
@@ -829,6 +830,10 @@ def generate_8d_report_tool(
             格式: [{"level":"Why 1","question":"为什么...？","answer":"...","evidence":"..."},...]
             必须包含 6 步：问题 + Why1 + Why2 + Why3 + Why4 + Why5（根因）
             如果为空字符串，则使用模板预填的 5Why 路径
+        rc_summary: 可选，动态根因总结（JSON 字符串）。当 Agent 已推演了 RC1/RC2/RC3 时传入，覆盖模板预填的 root_cause_summary。
+            格式: [{"id":"RC1","description":"直接原因描述","type":"直接原因"},{"id":"RC2","description":"管理原因","type":"管理原因"},{"id":"RC3","description":"系统原因","type":"系统原因"}]
+            必须包含 3 条：RC1（直接原因）+ RC2（管理原因）+ RC3（系统原因）
+            如果为空字符串，则使用模板预填的 RC 总结
         auto_fill: 可选，自动填充模式（默认 False）。当用户明确说「你帮我填」「给我示例」「看一下范例」「其他不要问我」时设为 True。
             启用后脚本会把所有 ____ 空白替换为合理示例值（化名/示例日期/角色分配）：
             - D1 团队姓名：张伟/李娜/王芳/刘强/陈静/赵磊/周敏/孙健（按角色分配）
@@ -886,19 +891,23 @@ def generate_8d_report_tool(
                 logger.warning(f"[8D] five_why_steps JSON 格式错误，忽略: {e}")
                 # 不阻断流程，继续用模板预填 5Why
 
-        # 🔴 关键修复：双保险机制
-        # 1. 如果用户明确要求 auto_fill（Agent 传了 auto_fill=True）→ 启用
-        # 2. 如果传入了动态 5Why（说明用户给了根因线索，是要完整示例）→ 自动启用 auto_fill
-        # 这样即使 Agent 在调用工具时漏传 auto_fill=True，只要传了 five_why_steps 也会自动填充
-        effective_auto_fill = auto_fill or has_dynamic_5why
-        if effective_auto_fill:
+        # 如果传入了动态 RC 总结，加 --rc-summary-json 参数
+        has_rc_summary = False
+        if rc_summary and rc_summary.strip():
+            try:
+                _json.loads(rc_summary)
+                cmd.extend(["--rc-summary-json", rc_summary])
+                logger.info(f"[8D] 启用动态 RC 覆盖（{len(rc_summary)} chars）")
+                has_rc_summary = True
+            except _json.JSONDecodeError as e:
+                logger.warning(f"[8D] rc_summary JSON 格式错误，忽略: {e}")
+
+        # 🔴 关键修复：auto_fill 只能由用户明确要求触发
+        # 用户给根因线索（five_why_steps）≠ 要示例，只是让 5Why 更精准
+        # 只有用户明确说"示例/随便填/你帮我填"时，Agent 才会传 auto_fill=True
+        if auto_fill:
             cmd.append("--auto-fill")
-            if auto_fill and not has_dynamic_5why:
-                logger.info(f"[8D] 启用自动填充模式（用户明确要求）")
-            elif has_dynamic_5why and not auto_fill:
-                logger.info(f"[8D] 自动启用填充模式（因传入动态 5Why，推断用户要完整示例）")
-            else:
-                logger.info(f"[8D] 启用自动填充模式（用户要求 + 动态 5Why）")
+            logger.info(f"[8D] 启用自动填充模式（用户明确要求示例）")
 
         logger.info(f"[8D] 调用 generate_8d.py: {' '.join(cmd[:6])}...")
 
@@ -945,11 +954,13 @@ def generate_8d_report_tool(
                 xlsx_url = f"/api/v1/documents/export-download/{xlsx_name}" if xlsx_name else ""
                 docx_url = f"/api/v1/documents/export-download/{docx_name}" if docx_name else ""
 
-                # 明确告诉 Agent 实际启用了哪些模式（避免 Agent 光说不做）
+                # 明确告诉 Agent 实际启用了哪些模式
                 modes_enabled = []
                 if has_dynamic_5why:
                     modes_enabled.append("动态 5Why 覆盖（已填入您推演的根因路径）")
-                if effective_auto_fill:
+                if has_rc_summary:
+                    modes_enabled.append("动态 RC 覆盖（已填入您推演的 RC1/RC2/RC3）")
+                if auto_fill:
                     modes_enabled.append("自动填充模式（人名/日期/责任人已填示例值）")
                 modes_str = " + ".join(modes_enabled) if modes_enabled else "默认模式（空白处留 ____）"
                 
@@ -968,7 +979,7 @@ def generate_8d_report_tool(
                     f"说明：标准 8D Word 文档，可直接提交客户\n\n"
                     f"【重要】你必须在回复中完整展示上面的下载链接 URL，前端依赖这些 URL 生成下载按钮。\n"
                     f"【重要】不要在对话中重复输出 8D 报告的完整内容，用户可以直接下载文件查看。\n"
-                    f"只需简要告诉用户：报告已生成、匹配了什么模板、{'空白处已填示例值' if effective_auto_fill else '空白处需补充实际数据'}。"
+                    f"只需简要告诉用户：报告已生成、匹配了什么模板、{'空白处已填示例值' if auto_fill else '空白处需补充实际数据'}。"
                 )
             except _json.JSONDecodeError as e:
                 return f"【8D报告生成失败】解析脚本输出 JSON 失败: {e}\n原始输出: {stdout[-500:]}"

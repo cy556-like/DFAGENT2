@@ -1,0 +1,34 @@
+[
+  {
+    "chat_id": "dfsr1_1a405fa3",
+    "title": "请用DFMEA方法对电动压缩机电机转子的退磁风险进行分析，关...",
+    "mode": "agent",
+    "agent_id": "dfmea-risk-agent",
+    "created_at": 1781352430.7813702,
+    "updated_at": 1781352623.771868
+  },
+  {
+    "chat_id": "dfsr1_9262f121",
+    "title": "XF模具质量智能体",
+    "mode": "agent",
+    "agent_id": "xf-quality-agent",
+    "created_at": 1781160306.4864388,
+    "updated_at": 1781160306.4864388
+  },
+  {
+    "chat_id": "dfsr1_a79503de",
+    "title": "原神",
+    "mode": "agent",
+    "agent_id": "xf-quality-agent",
+    "created_at": 1781160278.762691,
+    "updated_at": 1781160304.962233
+  },
+  {
+    "chat_id": "dfsr1_abe4d38c",
+    "title": "新对话",
+    "mode": "agent",
+    "agent_id": "",
+    "created_at": 1781160278.4660225,
+    "updated_at": 1781160278.4660225
+  }
+]

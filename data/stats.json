@@ -1,0 +1,89 @@
+{
+  "total_messages": 193,
+  "total_sessions": 162,
+  "daily_stats": {
+    "2026-06-10": {
+      "messages": 25,
+      "users": [
+        "admin"
+      ]
+    },
+    "2026-06-11": {
+      "messages": 25,
+      "users": [
+        "admin",
+        "dfsr1"
+      ]
+    },
+    "2026-06-12": {
+      "messages": 5,
+      "users": [
+        "admin"
+      ]
+    },
+    "2026-06-13": {
+      "messages": 36,
+      "users": [
+        "admin",
+        "dfsr1"
+      ]
+    },
+    "2026-06-14": {
+      "messages": 27,
+      "users": [
+        "admin"
+      ]
+    },
+    "2026-06-15": {
+      "messages": 3,
+      "users": [
+        "admin"
+      ]
+    },
+    "2026-06-16": {
+      "messages": 3,
+      "users": [
+        "admin"
+      ]
+    },
+    "2026-06-17": {
+      "messages": 8,
+      "users": [
+        "admin"
+      ]
+    },
+    "2026-06-18": {
+      "messages": 19,
+      "users": [
+        "admin"
+      ]
+    },
+    "2026-06-19": {
+      "messages": 3,
+      "users": [
+        "admin"
+      ]
+    },
+    "2026-06-22": {
+      "messages": 35,
+      "users": [
+        "admin"
+      ]
+    },
+    "2026-06-23": {
+      "messages": 4,
+      "users": [
+        "admin"
+      ]
+    }
+  },
+  "tool_usage": {},
+  "model_usage": {
+    "glm-5.1": 7,
+    "DeepSeek-V4-Flash": 154,
+    "qwen3.7-plus": 9,
+    "Doubao-Seed-2.0-pro": 11,
+    "mimo-v2.5-pro": 10,
+    "glm-5.2": 2
+  }
+}

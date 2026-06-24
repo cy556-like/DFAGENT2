@@ -1,0 +1,194 @@
+[
+  {
+    "chat_id": "admin_5912d60a",
+    "title": "DFMEA与风险分析专家",
+    "mode": "agent",
+    "agent_id": "dfmea-risk-agent",
+    "created_at": 1782196937.2499838,
+    "updated_at": 1782196937.2499838
+  },
+  {
+    "chat_id": "admin_8d7804f1",
+    "title": "电子电气设计协同智能体",
+    "mode": "agent",
+    "agent_id": "ee-design-agent",
+    "created_at": 1782196931.9614177,
+    "updated_at": 1782196931.9614177
+  },
+  {
+    "chat_id": "admin_966ab6de",
+    "title": "请根据冲压仿真结果输出标准化工艺卡，包含材料牌号、料厚、压边...",
+    "mode": "agent",
+    "agent_id": "manufacturing-process-agent",
+    "created_at": 1781760012.4106548,
+    "updated_at": 1781760041.3944585
+  },
+  {
+    "chat_id": "admin_5fe79090",
+    "title": "为总装线设计SPS物料配送系统，请说明料车设计要点、与AGV...",
+    "mode": "agent",
+    "agent_id": "equipment-production-agent",
+    "created_at": 1781759751.524845,
+    "updated_at": 1781759815.064186
+  },
+  {
+    "chat_id": "admin_657bb477",
+    "title": "悬架螺旋弹簧需高应力低重量，请评估粉末冶金空心弹簧与超高强度...",
+    "mode": "agent",
+    "agent_id": "material-selection-agent",
+    "created_at": 1781759423.8733318,
+    "updated_at": 1781759486.4908268
+  },
+  {
+    "chat_id": "admin_53842086",
+    "title": "设计控制臂橡胶衬套压装时，为防止压入偏斜和刮伤，请推荐几种压...",
+    "mode": "agent",
+    "agent_id": "part-design-agent",
+    "created_at": 1781757848.8266578,
+    "updated_at": 1781758430.5666842
+  },
+  {
+    "chat_id": "admin_fbc28262",
+    "title": "装备与产线开发智能体",
+    "mode": "agent",
+    "agent_id": "equipment-production-agent",
+    "created_at": 1781753948.7512996,
+    "updated_at": 1781753948.7512996
+  },
+  {
+    "chat_id": "admin_d91e541f",
+    "title": "仪表板横梁需高刚度和低重量，请从镁合金压铸、铝合金挤压和碳纤...",
+    "mode": "agent",
+    "agent_id": "material-selection-agent",
+    "created_at": 1781752893.0539372,
+    "updated_at": 1781752947.6564727
+  },
+  {
+    "chat_id": "admin_eb4d951e",
+    "title": "请根据冲压仿真结果输出标准化工艺卡，包含材料牌号、料厚、压边...",
+    "mode": "agent",
+    "agent_id": "manufacturing-process-agent",
+    "created_at": 1781746357.8955133,
+    "updated_at": 1781746408.9795282
+  },
+  {
+    "chat_id": "admin_46b02593",
+    "title": "功能安全重点是什么",
+    "mode": "agent",
+    "agent_id": "embedded-software-agent",
+    "created_at": 1781688506.1519284,
+    "updated_at": 1781688980.9484277
+  },
+  {
+    "chat_id": "admin_3e1385a5",
+    "title": "为满足ASIL-D的故障处理时间间隔要求，请生成RTOS任务...",
+    "mode": "agent",
+    "agent_id": "embedded-software-agent",
+    "created_at": 1781688070.3675652,
+    "updated_at": 1781688172.3680708
+  },
+  {
+    "chat_id": "admin_f11fac82",
+    "title": "车辆控制器的PCB过孔设计常出现断裂，请用TRIZ物场分析给...",
+    "mode": "agent",
+    "agent_id": "standards-innovation-agent",
+    "created_at": 1781687997.9220173,
+    "updated_at": 1781688127.1612194
+  },
+  {
+    "chat_id": "admin_ba1d141e",
+    "title": "针对排气歧管的热应力与模态频率冲突，需要做多目标优化，请用数...",
+    "mode": "agent",
+    "agent_id": "simulation-optimization-agent",
+    "created_at": 1781679361.4766994,
+    "updated_at": 1781680960.157827
+  },
+  {
+    "chat_id": "admin_3733c618",
+    "title": "多学科仿真与优化代理",
+    "mode": "agent",
+    "agent_id": "simulation-optimization-agent",
+    "created_at": 1781679351.875419,
+    "updated_at": 1781679351.875419
+  },
+  {
+    "chat_id": "admin_be1ea598",
+    "title": "我司一款轮速传感器要申请ECE R10的e-mark认证，请...",
+    "mode": "agent",
+    "agent_id": "standards-innovation-agent",
+    "created_at": 1781589890.882436,
+    "updated_at": 1781589920.9315593
+  },
+  {
+    "chat_id": "admin_b90ec702",
+    "title": "新对话",
+    "mode": "agent",
+    "agent_id": "",
+    "created_at": 1781432321.5073605,
+    "updated_at": 1781432321.5073605
+  },
+  {
+    "chat_id": "admin_b4437770",
+    "title": "试验设计与智能验证伙伴",
+    "mode": "agent",
+    "agent_id": "test-verification-agent",
+    "created_at": 1781431427.8778925,
+    "updated_at": 1781431427.8778925
+  },
+  {
+    "chat_id": "admin_5e148e87",
+    "title": "试验设计与智能验证伙伴",
+    "mode": "agent",
+    "agent_id": "test-verification-agent",
+    "created_at": 1781431304.46044,
+    "updated_at": 1781431304.46044
+  },
+  {
+    "chat_id": "admin_8dd918b3",
+    "title": "新对话",
+    "mode": "agent",
+    "agent_id": "",
+    "created_at": 1781431036.2863243,
+    "updated_at": 1781431036.2863243
+  },
+  {
+    "chat_id": "admin_196e1996",
+    "title": "试验设计与智能验证伙伴",
+    "mode": "agent",
+    "agent_id": "test-verification-agent",
+    "created_at": 1781430818.542454,
+    "updated_at": 1781430818.542454
+  },
+  {
+    "chat_id": "admin_994927a7",
+    "title": "新对话",
+    "mode": "agent",
+    "agent_id": "",
+    "created_at": 1781430728.088783,
+    "updated_at": 1781430728.088783
+  },
+  {
+    "chat_id": "admin_a2d282fd",
+    "title": "我们获得了高周疲劳S-N曲线的成组试验数据，请用极大似然法估...",
+    "mode": "agent",
+    "agent_id": "test-verification-agent",
+    "created_at": 1781240359.5370793,
+    "updated_at": 1781240427.9472644
+  },
+  {
+    "chat_id": "admin_c8c3b9d0",
+    "title": "新对话",
+    "mode": "agent",
+    "agent_id": "",
+    "created_at": 1781177885.9087615,
+    "updated_at": 1781177885.9087615
+  },
+  {
+    "chat_id": "admin_01cbf97c",
+    "title": "新对话",
+    "mode": "agent",
+    "agent_id": "",
+    "created_at": 1781177712.8909209,
+    "updated_at": 1781177712.8909209
+  }
+]

@@ -795,7 +795,8 @@ def generate_8d_report_tool(
     defect_rate: str = "500PPM",
     batch_size: str = "12",
     template: str = "generic-defect",
-    five_why_steps: str = ""
+    five_why_steps: str = "",
+    auto_fill: bool = False
 ) -> str:
     """生成专业的汽车行业 8D 报告（同时生成 xlsx 和 docx 两个文件）。
 
@@ -828,6 +829,15 @@ def generate_8d_report_tool(
             格式: [{"level":"Why 1","question":"为什么...？","answer":"...","evidence":"..."},...]
             必须包含 6 步：问题 + Why1 + Why2 + Why3 + Why4 + Why5（根因）
             如果为空字符串，则使用模板预填的 5Why 路径
+        auto_fill: 可选，自动填充模式（默认 False）。当用户明确说「你帮我填」「给我示例」「看一下范例」「其他不要问我」时设为 True。
+            启用后脚本会把所有 ____ 空白替换为合理示例值（化名/示例日期/角色分配）：
+            - D1 团队姓名：张伟/李娜/王芳/刘强/陈静/赵磊/周敏/孙健（按角色分配）
+            - D1 联系方式：内部分机号 8001-8009
+            - D3/D5/D6/D7 责任人：按措施类型分配角色
+            - D3/D5/D6/D7 完成时间：当前日期 + 2/3/5/7/14/30 天
+            - D8 签名/日期：化名 + 当天日期
+            - 其他字段（客户联系人/投诉日期/批次号等）：合理示例值
+            注意：D4 5Why/6M 的「请填写」引导提示不会被替换，保留给用户填实际分析内容
     """
     import subprocess
     import sys
@@ -873,6 +883,11 @@ def generate_8d_report_tool(
             except _json.JSONDecodeError as e:
                 logger.warning(f"[8D] five_why_steps JSON 格式错误，忽略: {e}")
                 # 不阻断流程，继续用模板预填 5Why
+
+        # 如果启用自动填充模式，加 --auto-fill 参数
+        if auto_fill:
+            cmd.append("--auto-fill")
+            logger.info(f"[8D] 启用自动填充模式（人名/日期/责任人将填示例值）")
 
         logger.info(f"[8D] 调用 generate_8d.py: {' '.join(cmd[:6])}...")
 

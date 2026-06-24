@@ -874,20 +874,31 @@ def generate_8d_report_tool(
         ]
 
         # 如果传入了动态 5Why，加 --five-why-json 参数
+        has_dynamic_5why = False
         if five_why_steps and five_why_steps.strip():
             # 简单校验 JSON 格式
             try:
                 _json.loads(five_why_steps)
                 cmd.extend(["--five-why-json", five_why_steps])
                 logger.info(f"[8D] 启用动态 5Why 覆盖（{len(five_why_steps)} chars）")
+                has_dynamic_5why = True
             except _json.JSONDecodeError as e:
                 logger.warning(f"[8D] five_why_steps JSON 格式错误，忽略: {e}")
                 # 不阻断流程，继续用模板预填 5Why
 
-        # 如果启用自动填充模式，加 --auto-fill 参数
-        if auto_fill:
+        # 🔴 关键修复：双保险机制
+        # 1. 如果用户明确要求 auto_fill（Agent 传了 auto_fill=True）→ 启用
+        # 2. 如果传入了动态 5Why（说明用户给了根因线索，是要完整示例）→ 自动启用 auto_fill
+        # 这样即使 Agent 在调用工具时漏传 auto_fill=True，只要传了 five_why_steps 也会自动填充
+        effective_auto_fill = auto_fill or has_dynamic_5why
+        if effective_auto_fill:
             cmd.append("--auto-fill")
-            logger.info(f"[8D] 启用自动填充模式（人名/日期/责任人将填示例值）")
+            if auto_fill and not has_dynamic_5why:
+                logger.info(f"[8D] 启用自动填充模式（用户明确要求）")
+            elif has_dynamic_5why and not auto_fill:
+                logger.info(f"[8D] 自动启用填充模式（因传入动态 5Why，推断用户要完整示例）")
+            else:
+                logger.info(f"[8D] 启用自动填充模式（用户要求 + 动态 5Why）")
 
         logger.info(f"[8D] 调用 generate_8d.py: {' '.join(cmd[:6])}...")
 
@@ -925,10 +936,19 @@ def generate_8d_report_tool(
                 xlsx_url = f"/api/v1/documents/export-download/{xlsx_name}" if xlsx_name else ""
                 docx_url = f"/api/v1/documents/export-download/{docx_name}" if docx_name else ""
 
+                # 明确告诉 Agent 实际启用了哪些模式（避免 Agent 光说不做）
+                modes_enabled = []
+                if has_dynamic_5why:
+                    modes_enabled.append("动态 5Why 覆盖（已填入您推演的根因路径）")
+                if effective_auto_fill:
+                    modes_enabled.append("自动填充模式（人名/日期/责任人已填示例值）")
+                modes_str = " + ".join(modes_enabled) if modes_enabled else "默认模式（空白处留 ____）"
+                
                 return (
                     f"【8D报告生成成功】\n"
                     f"报告编号：{report_number}\n"
-                    f"匹配模板：{matched_template}\n\n"
+                    f"匹配模板：{matched_template}\n"
+                    f"启用模式：{modes_str}\n\n"
                     f"📄 Excel 文件：{xlsx_name}\n"
                     f"下载链接：{xlsx_url}\n"
                     f"说明：单 Sheet 完整 Excel，含合并单元格+章节标题+交替行底色+根因高亮，可继续编辑\n\n"
@@ -937,7 +957,7 @@ def generate_8d_report_tool(
                     f"说明：标准 8D Word 文档，可直接提交客户\n\n"
                     f"【重要】你必须在回复中完整展示上面的两个下载链接 URL，前端依赖这些 URL 生成下载按钮。\n"
                     f"【重要】不要在对话中重复输出 8D 报告的完整内容，用户可以直接下载文件查看。\n"
-                    f"只需简要告诉用户：报告已生成、匹配了什么模板、空白处需补充实际数据。"
+                    f"只需简要告诉用户：报告已生成、匹配了什么模板、{'空白处已填示例值' if effective_auto_fill else '空白处需补充实际数据'}。"
                 )
             except _json.JSONDecodeError as e:
                 return f"【8D报告生成失败】解析脚本输出 JSON 失败: {e}\n原始输出: {stdout[-500:]}"

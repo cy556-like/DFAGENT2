@@ -385,7 +385,8 @@ async def search_documents_tool(query: str) -> str:
 
     # 按综合分数排序
     results.sort(key=lambda x: x.get("final_score", 0), reverse=True)
-    results = results[:5]  # [质量修复] 取 top 5（原 top 3 信息不足，增加检索量保证回答质量）
+    results = results[:5]  # [质量修复] 取 top 5（原 top 3 信息不足，增加检索量保证回答质量）
+
 
     output = f"【检索结果】共找到 {len(results)} 条相关内容：\n\n"
     for i, r in enumerate(results, 1):
@@ -784,6 +785,159 @@ def export_xlsx_tool(content: str, filename: str = "", title: str = "") -> str:
         return f"【导出失败】{str(e)}"
 
 
+# ===== 8D 报告生成工具 =====
+
+@tool
+def generate_8d_report_tool(
+    product: str,
+    defect: str,
+    customer: str,
+    defect_rate: str = "500PPM",
+    batch_size: str = "12",
+    template: str = "generic-defect"
+) -> str:
+    """生成专业的汽车行业 8D 报告（同时生成 xlsx 和 docx 两个文件）。
+
+    【用途】当用户需要 8D 报告（汽车行业问题解决报告、客户投诉报告、SCAR、根因分析报告）时使用。
+    【典型触发】
+    - 「生成8D报告」「8D分析」
+    - 「客户投诉 + 产品 + 缺陷」
+    - 「根因分析报告」「SCAR」
+    - 「质量问题追溯」
+    【为什么必须用这个工具而不是 export_xlsx_tool】
+    - generate_8d_report_tool 会调用 skills/8d-skill/scripts/generate_8d.py 脚本
+    - 生成的 xlsx 带合并单元格、深蓝章节标题、交替行底色、根因黄色高亮等专业样式
+    - 生成的 docx 是标准 8D Word 文档，可直接提交客户
+    - export_xlsx_tool 只能生成简单表格，无样式，不适合 8D 报告
+    【模板选择规则】
+    - 缺陷涉及漆面/涂装/颗粒/流挂/色差/橘皮/缩孔 → paint-defect
+    - 缺陷涉及装配/间隙/面差/卡扣/异响/松动 → assembly-defect
+    - 缺陷涉及焊接/虚焊/焊穿/焊渣/焊点/强度 → welding-defect
+    - 缺陷涉及尺寸/超差/CPK/公差/变形/收缩 → dimensional-defect
+    - 其他/无法明确分类 → generic-defect
+
+    Args:
+        product: 产品名称（如「前保险杠总成」「轮毂」「ECU」）
+        defect: 缺陷描述（如「漆面颗粒」「装配间隙超差」「凹陷」）
+        customer: 客户名称（如「比亚迪」「一汽大众」）
+        defect_rate: 不良率（默认 500PPM，安全件用 50PPM，严禁用 3%/5%/8% 等灾难级数字）
+        batch_size: 批次数量（8D 分析样本数，不是生产批量，默认 12，线束类用 5）
+        template: 模板 slug，可选值: paint-defect/assembly-defect/welding-defect/dimensional-defect/generic-defect
+    """
+    import subprocess
+    import sys
+    import json as _json
+    import re as _re
+
+    try:
+        # 定位 generate_8d.py 脚本路径
+        # settings.DATA_DIR 是项目根/data，脚本在 项目根/skills/8d-skill/scripts/generate_8d.py
+        project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        script_path = os.path.join(project_root, "skills", "8d-skill", "scripts", "generate_8d.py")
+
+        if not os.path.exists(script_path):
+            return f"【8D报告生成失败】未找到脚本: {script_path}。请确认 skills/8d-skill/scripts/generate_8d.py 已部署。"
+
+        # 输出目录：data/export/{session_id}
+        session_id = get_current_session_id() or ""
+        export_dir = os.path.join(settings.DATA_DIR, "export")
+        if session_id:
+            export_dir = os.path.join(export_dir, session_id)
+        os.makedirs(export_dir, exist_ok=True)
+
+        # 构造命令
+        cmd = [
+            sys.executable,
+            script_path,
+            "--product", product,
+            "--defect", defect,
+            "--customer", customer,
+            "--defect-rate", defect_rate,
+            "--batch-size", batch_size,
+            "--template", template,
+            "--output-dir", export_dir,
+        ]
+
+        logger.info(f"[8D] 调用 generate_8d.py: {' '.join(cmd)}")
+
+        # 执行脚本（超时 60 秒）
+        result = subprocess.run(
+            cmd,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            encoding='utf-8',
+            errors='replace',
+            cwd=project_root,
+        )
+
+        if result.returncode != 0:
+            err_msg = result.stderr[-500:] if result.stderr else "无 stderr 输出"
+            return f"【8D报告生成失败】脚本执行错误（返回码 {result.returncode}）：\n{err_msg}"
+
+        # 从 stdout 解析 RESULT_JSON
+        stdout = result.stdout or ""
+        json_match = _re.search(r'\[RESULT_JSON\]\s*(\{.*?\})\s*$', stdout, _re.DOTALL)
+        if json_match:
+            try:
+                result_data = _json.loads(json_match.group(1))
+                xlsx_path = result_data.get("excel_path", "")
+                docx_path = result_data.get("word_path", "")
+                report_number = result_data.get("report_number", "")
+                matched_template = result_data.get("template_slug", template)
+
+                # 提取文件名（去掉目录部分）
+                xlsx_name = os.path.basename(xlsx_path) if xlsx_path else ""
+                docx_name = os.path.basename(docx_path) if docx_path else ""
+
+                # 生成下载链接（前端会拦截这些 URL）
+                xlsx_url = f"/api/v1/documents/export-download/{xlsx_name}" if xlsx_name else ""
+                docx_url = f"/api/v1/documents/export-download/{docx_name}" if docx_name else ""
+
+                return (
+                    f"【8D报告生成成功】\n"
+                    f"报告编号：{report_number}\n"
+                    f"匹配模板：{matched_template}\n\n"
+                    f"📄 Excel 文件：{xlsx_name}\n"
+                    f"下载链接：{xlsx_url}\n"
+                    f"说明：单 Sheet 完整 Excel，含合并单元格+章节标题+交替行底色+根因高亮，可继续编辑\n\n"
+                    f"📝 Word 文件：{docx_name}\n"
+                    f"下载链接：{docx_url}\n"
+                    f"说明：标准 8D Word 文档，可直接提交客户\n\n"
+                    f"【重要】你必须在回复中完整展示上面的两个下载链接 URL，前端依赖这些 URL 生成下载按钮。\n"
+                    f"【重要】不要在对话中重复输出 8D 报告的完整内容，用户可以直接下载文件查看。\n"
+                    f"只需简要告诉用户：报告已生成、匹配了什么模板、空白处需补充实际数据。"
+                )
+            except _json.JSONDecodeError as e:
+                return f"【8D报告生成失败】解析脚本输出 JSON 失败: {e}\n原始输出: {stdout[-500:]}"
+
+        # 如果没有 RESULT_JSON，尝试从 stdout 中查找文件路径
+        xlsx_match = _re.search(r'Excel 已生成[：:]\s*(.+?\.xlsx)', stdout)
+        docx_match = _re.search(r'Word 已生成[：:]\s*(.+?\.docx)', stdout)
+
+        if xlsx_match or docx_match:
+            msg = "【8D报告生成成功】\n"
+            if xlsx_match:
+                xlsx_name = os.path.basename(xlsx_match.group(1).strip())
+                msg += f"📄 Excel 文件：{xlsx_name}\n下载链接：/api/v1/documents/export-download/{xlsx_name}\n\n"
+            if docx_match:
+                docx_name = os.path.basename(docx_match.group(1).strip())
+                msg += f"📝 Word 文件：{docx_name}\n下载链接：/api/v1/documents/export-download/{docx_name}\n\n"
+            msg += "【重要】你必须在回复中完整展示上面的下载链接 URL，前端依赖这些 URL 生成下载按钮。"
+            return msg
+
+        return f"【8D报告生成失败】脚本执行成功但未找到文件路径。\nstdout: {stdout[-500:]}\nstderr: {result.stderr[-500:] if result.stderr else ''}"
+
+    except subprocess.TimeoutExpired:
+        return "【8D报告生成失败】脚本执行超时（60秒），请检查 openpyxl/python-docx 是否已安装，或缩减输入内容后重试。"
+    except FileNotFoundError as e:
+        return f"【8D报告生成失败】Python 解释器未找到: {e}"
+    except Exception as e:
+        logger.exception("[8D] generate_8d_report_tool 异常")
+        return f"【8D报告生成失败】{type(e).__name__}: {str(e)}"
+
+
+
 # ===== [#12] 外部系统集成工具 =====
 
 @tool
@@ -1071,6 +1225,7 @@ BASE_TOOLS = [
     modify_document_tool,
     export_document_tool,
     export_xlsx_tool,
+    generate_8d_report_tool,
 ]
 
 # 联网搜索工具（按需启用）

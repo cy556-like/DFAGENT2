@@ -78,6 +78,7 @@ from openpyxl.styles import (
     Font,
 )
 from openpyxl.utils import get_column_letter
+from openpyxl.worksheet.datavalidation import DataValidation
 from docx import Document
 from docx.shared import Pt, Cm, RGBColor, Mm
 from docx.enum.text import WD_ALIGN_PARAGRAPH
@@ -290,14 +291,17 @@ def set_column_widths(ws, widths):
         ws.column_dimensions[get_column_letter(i)].width = w
 
 
-def write_table(ws, start_row, headers, rows, col_widths, root_cause_row_indices=None):
+def write_table(ws, start_row, headers, rows, col_widths, root_cause_row_indices=None, dropdowns=None):
     """
     在指定起始行写入一个表格（含表头 + 数据行）。
     root_cause_row_indices: 数据行中需要黄色高亮的索引列表（0-based 数据行索引）
+    dropdowns: 可选，字典 {列索引(1-based): [选项1, 选项2, ...]}，给指定列加 Excel 数据验证下拉框
     返回：下一可用行号
     """
     if root_cause_row_indices is None:
         root_cause_row_indices = []
+    if dropdowns is None:
+        dropdowns = {}
 
     # 表头
     for col_idx, header in enumerate(headers, start=1):
@@ -318,6 +322,35 @@ def write_table(ws, start_row, headers, rows, col_widths, root_cause_row_indices
 
     # 设置列宽
     set_column_widths(ws, col_widths)
+
+    # 添加数据验证下拉框（如果指定了 dropdowns）
+    for col_idx, options in dropdowns.items():
+        if col_idx < 1 or col_idx > len(headers):
+            continue
+        # 构造 Excel 数据验证公式（用英文逗号分隔，最多 255 字符）
+        # 如果选项总长超 255，用引用范围方式（这里简化处理，限制选项数）
+        options_str = ",".join(options)
+        if len(options_str) > 255:
+            # 选项太多，跳过（避免 Excel 报错）
+            continue
+        dv = DataValidation(
+            type="list",
+            formula1=f'"{options_str}"',
+            allow_blank=True,
+            showDropDown=False,  # False = 显示下拉箭头（openpyxl 的 showDropDown 是反逻辑）
+            showErrorMessage=True,
+            errorTitle="输入无效",
+            error=f"请从下拉框选择：{', '.join(options)}",
+            promptTitle="请选择",
+            prompt=f"可选值：{', '.join(options)}",
+        )
+        # 应用到数据行（不含表头）
+        col_letter = get_column_letter(col_idx)
+        first_row = start_row + 1
+        last_row = start_row + len(rows)
+        cell_range = f"{col_letter}{first_row}:{col_letter}{last_row}"
+        dv.add(cell_range)
+        ws.add_data_validation(dv)
 
     # 注意：冻结窗格已移到 generate_excel 末尾统一设置（避免多次设置互相覆盖）
     return start_row + 1 + len(rows)
@@ -478,6 +511,7 @@ def generate_excel(context, template, output_path, report_number):
         ["序号", "遏制措施", "责任人", "完成时间", "验证方法", "状态"],
         [[i + 1, actions[i], "____", "____", "____（如100%全检记录/不良率对比）", "待执行"] for i in range(5)],
         col_widths=[6, 50, 12, 14, 28, 10],
+        dropdowns={6: ["待执行", "进行中", "已完成", "延期", "取消"]},
     )
     row += 1
     row = write_section_title(ws, row, "二、遏制有效性验证", span_cols=2)
@@ -552,19 +586,21 @@ def generate_excel(context, template, output_path, report_number):
             m_rows,
             col_widths=[18, 55, 18],
             root_cause_row_indices=m_rc_indices,
+            dropdowns={3: ["根因", "贡献因子", "排除", "待确认"]},
         )
     else:
         row = write_table(ws, row,
             ["6M 维度", "候选原因", "证据", "是否根因"],
             [
-                ["Man（人）", six_m.get("man", "____"), "____", "____（是/否）"],
-                ["Machine（机）", six_m.get("machine", "____"), "____", "____（是/否）"],
-                ["Material（料）", six_m.get("material", "____"), "____", "____（是/否）"],
-                ["Method（法）", six_m.get("method", "____"), "____", "____（是/否）"],
-                ["Measurement（测）", six_m.get("measurement", "____"), "____", "____（是/否）"],
-                ["Environment（环）", six_m.get("environment", "____"), "____", "____（是/否）"],
+                ["Man（人）", six_m.get("man", "____"), "____", "否"],
+                ["Machine（机）", six_m.get("machine", "____"), "____", "否"],
+                ["Material（料）", six_m.get("material", "____"), "____", "否"],
+                ["Method（法）", six_m.get("method", "____"), "____", "否"],
+                ["Measurement（测）", six_m.get("measurement", "____"), "____", "否"],
+                ["Environment（环）", six_m.get("environment", "____"), "____", "否"],
             ],
             col_widths=[16, 50, 24, 14],
+            dropdowns={4: ["是", "否", "待确认"]},
         )
 
     row += 1
@@ -619,6 +655,7 @@ def generate_excel(context, template, output_path, report_number):
         ["序号", "CA 方案", "针对根因", "可行性", "风险评估", "决策"],
         ca_rows,
         col_widths=[6, 50, 14, 12, 30, 12],
+        dropdowns={4: ["高", "中", "低"], 6: ["采纳", "否决", "待评估"]},
     )
 
     row += 1
@@ -636,6 +673,7 @@ def generate_excel(context, template, output_path, report_number):
         ["序号", "实施措施", "目标根因", "责任人", "完成时间", "状态", "验证结果"],
         d6_rows,
         col_widths=[6, 40, 12, 14, 14, 18, 22],
+        dropdowns={6: ["未开始", "进行中", "已完成", "延期", "取消"]},
     )
 
     # ==================== D7 ====================
@@ -652,6 +690,7 @@ def generate_excel(context, template, output_path, report_number):
         ["序号", "横向展开措施", "推广范围", "责任人", "完成时间", "状态"],
         y_rows,
         col_widths=[6, 50, 22, 14, 14, 14],
+        dropdowns={6: ["未开始", "进行中", "已完成", "延期", "不适用"]},
     )
 
     row += 1
@@ -1300,6 +1339,12 @@ def parse_args():
         default=os.path.expanduser("~/Desktop"),
         help="输出目录（默认 ~/Desktop）",
     )
+    parser.add_argument(
+        "--five-why-json",
+        required=False,
+        default=None,
+        help='动态 5Why 内容（JSON 字符串），覆盖模板预填的 5why_path。格式: [{"level":"Why 1","question":"...","answer":"...","evidence":"..."},...]',
+    )
     return parser.parse_args()
 
 
@@ -1341,6 +1386,24 @@ def main():
     # 加载模板
     template = load_template(args.template, context)
     print(f"[INFO] 使用模板：{template.get('slug', args.template)} - {template.get('name', '')}")
+
+    # 动态 5Why 覆盖（如果传入了 --five-why-json）
+    if args.five_why_json:
+        try:
+            custom_steps = json.loads(args.five_why_json)
+            if isinstance(custom_steps, list) and len(custom_steps) > 0:
+                # 确保 d4_template 存在
+                if "d4_template" not in template:
+                    template["d4_template"] = {}
+                # 覆盖 5why_path.steps
+                if "5why_path" not in template["d4_template"]:
+                    template["d4_template"]["5why_path"] = {"problem": f"产品{args.product}为什么出现{args.defect}？"}
+                template["d4_template"]["5why_path"]["steps"] = custom_steps
+                print(f"[INFO] 已覆盖 5Why 路径：{len(custom_steps)} 步（动态传入）")
+            else:
+                print(f"[WARN] --five-why-json 解析后非列表或为空，忽略，使用模板预填 5Why")
+        except json.JSONDecodeError as e:
+            print(f"[WARN] --five-why-json JSON 解析失败: {e}，使用模板预填 5Why")
 
     # 确保输出目录存在
     output_dir = os.path.expanduser(args.output_dir)

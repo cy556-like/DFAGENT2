@@ -794,7 +794,8 @@ def generate_8d_report_tool(
     customer: str,
     defect_rate: str = "500PPM",
     batch_size: str = "12",
-    template: str = "generic-defect"
+    template: str = "generic-defect",
+    five_why_steps: str = ""
 ) -> str:
     """生成专业的汽车行业 8D 报告（同时生成 xlsx 和 docx 两个文件）。
 
@@ -823,6 +824,10 @@ def generate_8d_report_tool(
         defect_rate: 不良率（默认 500PPM，安全件用 50PPM，严禁用 3%/5%/8% 等灾难级数字）
         batch_size: 批次数量（8D 分析样本数，不是生产批量，默认 12，线束类用 5）
         template: 模板 slug，可选值: paint-defect/assembly-defect/welding-defect/dimensional-defect/generic-defect
+        five_why_steps: 可选，动态 5Why 内容（JSON 字符串）。当 Agent 已对缺陷做了根因分析时传入，覆盖模板预填的 5Why。
+            格式: [{"level":"Why 1","question":"为什么...？","answer":"...","evidence":"..."},...]
+            必须包含 6 步：问题 + Why1 + Why2 + Why3 + Why4 + Why5（根因）
+            如果为空字符串，则使用模板预填的 5Why 路径
     """
     import subprocess
     import sys
@@ -858,7 +863,18 @@ def generate_8d_report_tool(
             "--output-dir", export_dir,
         ]
 
-        logger.info(f"[8D] 调用 generate_8d.py: {' '.join(cmd)}")
+        # 如果传入了动态 5Why，加 --five-why-json 参数
+        if five_why_steps and five_why_steps.strip():
+            # 简单校验 JSON 格式
+            try:
+                _json.loads(five_why_steps)
+                cmd.extend(["--five-why-json", five_why_steps])
+                logger.info(f"[8D] 启用动态 5Why 覆盖（{len(five_why_steps)} chars）")
+            except _json.JSONDecodeError as e:
+                logger.warning(f"[8D] five_why_steps JSON 格式错误，忽略: {e}")
+                # 不阻断流程，继续用模板预填 5Why
+
+        logger.info(f"[8D] 调用 generate_8d.py: {' '.join(cmd[:6])}...")
 
         # 执行脚本（超时 60 秒）
         result = subprocess.run(

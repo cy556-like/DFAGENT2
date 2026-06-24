@@ -398,11 +398,246 @@ def write_kv_block(ws, start_row, kv_pairs, label_col_width=22, value_col_width=
     return start_row + len(kv_pairs)
 
 
+def _apply_auto_fill(ws, report_number):
+    """自动填充模式：扫描所有单元格，把 ____ 替换为合理示例值。
+    
+    填充规则：
+    - 姓名字段（D1 团队、D8 签名栏）：按角色分配化名
+    - 日期字段：基于当前日期计算
+    - 联系方式：内部分机号
+    - 责任人：按措施类型分配角色
+    """
+    import datetime
+    from openpyxl.utils import get_column_letter
+    
+    today = datetime.date.today()
+    today_str = today.strftime("%Y-%m-%d")
+    date_plus = lambda days: (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    
+    # 角色对应的化名（固定，方便用户区分）
+    ROLE_NAMES = {
+        "团队领导（质量工程师）": "张伟",
+        "工艺工程师": "李娜",
+        "设备工程师": "刘强",
+        "生产主管": "陈静",
+        "设计工程师": "赵磊",
+        "SQE（供应商质量工程师）": "周敏",
+        "质量经理（审核）": "王芳",
+        "编制（质量工程师）": "张伟",
+        "审核（质量经理）": "王芳",
+        "批准（质量总监）": "孙健",
+        "客户确认（如需）": "____",
+    }
+    
+    # 部门对应的化名（用于 D3/D5/D6/D7 责任人列）
+    DEPT_PERSON = {
+        "质量部": "张伟",
+        "工艺部": "李娜",
+        "设备部": "刘强",
+        "生产部": "陈静",
+        "研发部": "赵磊",
+        "物流部": "周敏",
+        "销售部": "吴洋",
+    }
+    
+    # 扫描所有单元格，按上下文判断 ____ 应该填什么
+    for row in ws.iter_rows(min_row=1, max_row=ws.max_row, min_col=1, max_col=ws.max_column):
+        for cell in row:
+            if cell.value is None:
+                continue
+            val = str(cell.value).strip()
+            if val != "____" and not val.startswith("____（"):
+                continue
+            
+            # 获取同行左侧单元格内容，用于上下文判断
+            left_cell = ws.cell(row=cell.row, column=cell.col_idx - 1) if cell.col_idx > 1 else None
+            left_val = str(left_cell.value) if left_cell and left_cell.value else ""
+            
+            # 获取本行第一列（通常是序号或角色）
+            first_col_val = str(ws.cell(row=cell.row, column=1).value or "")
+            
+            # 判断字段类型并填充
+            replacement = _guess_fill_value(
+                left_val=left_val,
+                first_col_val=first_col_val,
+                col_idx=cell.col_idx,
+                role_names=ROLE_NAMES,
+                dept_person=DEPT_PERSON,
+                today_str=today_str,
+                date_plus=date_plus,
+                report_number=report_number,
+            )
+            
+            if replacement:
+                cell.value = replacement
+
+
+def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person, today_str, date_plus, report_number):
+    """根据上下文猜测 ____ 应该填什么值。返回 None 表示无法判断，保留 ____"""
+    left_val_clean = left_val.strip()
+    first_col_clean = first_col_val.strip()
+    
+    # 1. 姓名/签名栏：用本行第一列判断是否是角色名行（D1 团队表 / D8 签名栏）
+    # D1 团队表：第1列=角色名，第2列=姓名，第3列=部门，第4列=联系方式
+    # D8 签名栏：第1列=角色名，第2列=姓名，第3列=签名，第4列=日期
+    if first_col_clean in role_names:
+        name = role_names[first_col_clean]
+        if name != "____":
+            # 判断是 D1 团队表还是 D8 签名栏
+            # D8 角色名包含"编制"/"审核"/"批准"/"客户确认"
+            # D8 签名栏的角色名以"编制"/"审核"/"批准"/"客户确认"开头
+            # D1 团队表的角色名"质量经理（审核）"包含"审核"但不在开头
+            is_d8_signature = any(first_col_clean.startswith(kw) for kw in ["编制", "审核", "批准", "客户确认"])
+            
+            if col_idx == 2:
+                return name  # 姓名
+            if is_d8_signature:
+                # D8 签名栏
+                if col_idx == 3:
+                    return name  # 签名 = 姓名
+                if col_idx == 4:
+                    return today_str  # 日期 = 当天
+            else:
+                # D1 团队表
+                if col_idx == 4:
+                    # 联系方式：内部分机号
+                    ext_map = {"张伟": "8001", "李娜": "8002", "刘强": "8003", "陈静": "8004",
+                              "赵磊": "8005", "周敏": "8006", "王芳": "8007", "孙健": "8008", "吴洋": "8009"}
+                    return ext_map.get(name, "____")
+    
+    # 2. D3/D5/D6/D7 责任人列：第一列是序号(1/2/3...)，按行号分配角色
+    if first_col_clean in ["1", "2", "3", "4", "5", "6", "7"]:
+        seq = int(first_col_clean)
+        # 责任人轮换分配（质量/工艺/设备/生产/物流/质量/质量）
+        person_rotation = ["张伟", "李娜", "刘强", "陈静", "周敏", "张伟", "王芳"]
+        if col_idx == 3:  # D3 责任人列（序号/措施/责任人/完成时间/验证/状态）
+            return person_rotation[min(seq - 1, len(person_rotation) - 1)]
+        if col_idx == 4:  # D3 完成时间列
+            return date_plus(2 + seq)  # 2/3/4/5/6 天后
+        if col_idx == 5:  # D3 验证方法列
+            return "____（如100%全检记录/不良率对比）"  # 保留原提示
+        # D5 表格列: 序号/CA方案/针对根因/可行性/风险评估/决策
+        # D6 表格列: 序号/实施措施/目标根因/责任人/完成时间/状态/验证结果
+        # D7 表格列: 序号/横向展开措施/推广范围/责任人/完成时间/状态
+        # 判断当前在哪个表，用 col_idx 推断
+    
+    # 3. D6 责任人列（第4列）、完成时间列（第5列）
+    if first_col_clean in ["1", "2", "3", "4", "5", "6", "7"]:
+        seq = int(first_col_clean)
+        person_rotation = ["张伟", "李娜", "刘强", "陈静", "周敏", "张伟", "王芳"]
+        if col_idx == 4:  # D6 责任人列
+            return person_rotation[min(seq - 1, len(person_rotation) - 1)]
+        if col_idx == 5:  # D6 完成时间列
+            return date_plus(7 + seq * 3)  # 7/10/13/16/19 天后
+        if col_idx == 7:  # D6 验证结果列
+            return "____（验证数据见 D6 末尾）"
+        # D7 责任人列（第4列）、完成时间列（第5列）
+        if col_idx == 4:
+            return person_rotation[min(seq - 1, len(person_rotation) - 1)]
+        if col_idx == 5:
+            return date_plus(14 + seq * 7)  # 14/21/28/35 天后
+    
+    # 4. D0-D2 信息表的空白字段
+    if left_val_clean == "报告发起人":
+        return "张伟"
+    if left_val_clean == "客户联系人":
+        return "李工（IQC主管）"
+    if left_val_clean == "客户投诉日期":
+        return date_plus(-3)  # 3 天前
+    if left_val_clean == "客户投诉单号":
+        return f"CC-{today_str.replace('-', '')}-{1000 + hash(first_col_val) % 9000}"
+    if left_val_clean == "客户反馈渠道":
+        return "邮件"
+    if left_val_clean == "产品编号 / 零件号":
+        return "____（请补充实际零件号）"
+    if left_val_clean == "批次号":
+        return f"B{today_str.replace('-', '')}01"
+    if left_val_clean == "不良数量":
+        return "____（请补充实际不良件数）"
+    if left_val_clean == "8D 负责人":
+        return "张伟"
+    
+    # 5. D2 5W2H 表的空白
+    if left_val_clean == "When（何时发现）":
+        return f"{date_plus(-3)} 08:30 白班"
+    if left_val_clean == "Who（谁发现的）":
+        return "客户 IQC 检验员"
+    if left_val_clean == "Why（为什么是问题）":
+        return "____（违反的标准/规格要求）"
+    if left_val_clean == "How（如何发现）":
+        return "100% 外观目视检查"
+    
+    # 6. D3 遏制有效性验证表的空白
+    if left_val_clean == "遏制开始日期":
+        return date_plus(-2)
+    if left_val_clean == "遏制后不良率（24h内）":
+        return "____ PPM（请填写实际数据）"
+    if left_val_clean == "遏制后不良率（72h内）":
+        return "____ PPM（请填写实际数据）"
+    if left_val_clean == "遏制结论":
+        return "____（达标/未达标，是否需要继续遏制）"
+    if left_val_clean == "遏制措施截止日期":
+        return date_plus(7)
+    if left_val_clean == "客户是否认可":
+        return "待确认"
+    
+    # 7. D4 根本原因验证的空白
+    if left_val_clean == "验证方法":
+        return "现场观察 + 数据收集"
+    if left_val_clean == "验证数据":
+        return "____（请补充实际验证数据）"
+    if left_val_clean == "验证结论":
+        return "待进一步验证"
+    if left_val_clean == "验证人 / 日期":
+        return f"张伟 / {today_str}"
+    
+    # 8. D7 PFMEA 更新表的空白
+    if left_val_clean == "本次失效模式":
+        return "____（请补充实际失效模式描述）"
+    if left_val_clean == "原 RPN":
+        return "____（请补充原 RPN 值）"
+    if left_val_clean == "更新后 RPN":
+        return "____（请补充更新后 RPN 值）"
+    if left_val_clean == "PFMEA 更新人 / 日期":
+        return f"李娜 / {today_str}"
+    
+    # 9. D8 关闭确认的空白
+    if left_val_clean == "所有 CA 是否实施完成":
+        return "否（进行中）"
+    if left_val_clean == "所有 CA 是否验证有效":
+        return "否（待验证）"
+    if left_val_clean == "客户是否认可":
+        return "待确认"
+    if left_val_clean == "所有文件是否更新（SOP/PFMEA/培训教材）":
+        return "否（待更新）"
+    if left_val_clean == "横向展开是否完成":
+        return "否（待展开）"
+    if left_val_clean == "关闭日期":
+        return "____（待所有 CA 完成后填写）"
+    if left_val_clean == "关闭结论":
+        return "暂不关闭，待所有 CA 实施并验证"
+    if left_val_clean == "本次问题处理经验":
+        return "____（待 8D 关闭时总结）"
+    if left_val_clean == "可改进之处":
+        return "____（待 8D 关闭时总结）"
+    if left_val_clean == "对其他产品的启示":
+        return "____（待 8D 关闭时总结）"
+    if left_val_clean == "建议改进的管理流程":
+        return "____（待 8D 关闭时总结）"
+    
+    # 10. D5/D6 验证结论的空白
+    if left_val_clean == "有效性验证":
+        return "____（需至少30天连续数据，不良率降至目标值）"
+    
+    # 无法判断的字段，保留 ____
+    return None
+
+
 # ============================================================
 # Excel 生成（单 Sheet 版本：D0-D8 合并为一个表格）
 # ============================================================
 
-def generate_excel(context, template, output_path, report_number):
+def generate_excel(context, template, output_path, report_number, auto_fill=False):
     """生成 Excel 文件（单 Sheet：8D报告）。"""
     wb = openpyxl.Workbook()
     ws = wb.active
@@ -748,6 +983,11 @@ def generate_excel(context, template, output_path, report_number):
     # 冻结窗格：只冻结第 1 行（标题行），不冻结列
     # 这样用户向下滚动时标题始终可见，且不会锁定中间表格的滚动
     ws.freeze_panes = "A2"
+
+    # 自动填充模式：把所有 ____ 替换为合理示例值
+    if auto_fill:
+        _apply_auto_fill(ws, report_number)
+        print(f"[INFO] 已启用自动填充模式，所有 ____ 已替换为示例值")
 
     wb.save(output_path)
     print(f"[OK] Excel 已生成：{output_path}")
@@ -1345,6 +1585,12 @@ def parse_args():
         default=None,
         help='动态 5Why 内容（JSON 字符串），覆盖模板预填的 5why_path。格式: [{"level":"Why 1","question":"...","answer":"...","evidence":"..."},...]',
     )
+    parser.add_argument(
+        "--auto-fill",
+        action="store_true",
+        default=False,
+        help="自动填充模式：把所有 ____ 空白替换为合理示例值（化名/示例日期/角色分配）。用户明确说你帮我填时启用。",
+    )
     return parser.parse_args()
 
 
@@ -1421,7 +1667,7 @@ def main():
     word_path = os.path.join(output_dir, word_filename)
 
     # 生成 Excel
-    generate_excel(context, template, excel_path, report_number)
+    generate_excel(context, template, excel_path, report_number, auto_fill=args.auto_fill)
 
     # 生成 Word
     generate_word(context, template, word_path, report_number)

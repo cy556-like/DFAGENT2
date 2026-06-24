@@ -1745,6 +1745,12 @@ def parse_args():
         default=False,
         help="自动填充模式：把所有 ____ 空白替换为合理示例值（化名/示例日期/角色分配）。用户明确说你帮我填时启用。",
     )
+    parser.add_argument(
+        "--rc-summary-json",
+        required=False,
+        default=None,
+        help='动态根因总结（JSON 字符串），覆盖模板预填的 root_cause_summary。格式: [{"id":"RC1","description":"...","type":"直接原因"},...]',
+    )
     return parser.parse_args()
 
 
@@ -1804,6 +1810,22 @@ def main():
                 print(f"[WARN] --five-why-json 解析后非列表或为空，忽略，使用模板预填 5Why")
         except json.JSONDecodeError as e:
             print(f"[WARN] --five-why-json JSON 解析失败: {e}，使用模板预填 5Why")
+
+    # 动态 RC 总结覆盖（如果传入了 --rc-summary-json）
+    if args.rc_summary_json:
+        try:
+            custom_rc = json.loads(args.rc_summary_json)
+            if isinstance(custom_rc, list) and len(custom_rc) > 0:
+                # 确保 d4_template 存在
+                if "d4_template" not in template:
+                    template["d4_template"] = {}
+                # 覆盖 root_cause_summary
+                template["d4_template"]["root_cause_summary"] = custom_rc
+                print(f"[INFO] 已覆盖 RC 总结：{len(custom_rc)} 条（动态传入）")
+            else:
+                print(f"[WARN] --rc-summary-json 解析后非列表或为空，忽略，使用模板预填 RC")
+        except json.JSONDecodeError as e:
+            print(f"[WARN] --rc-summary-json JSON 解析失败: {e}，使用模板预填 RC")
 
     # 确保输出目录存在
     output_dir = os.path.expanduser(args.output_dir)

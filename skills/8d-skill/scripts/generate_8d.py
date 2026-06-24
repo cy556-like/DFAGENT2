@@ -472,6 +472,93 @@ def _apply_auto_fill(ws, report_number):
                 cell.value = replacement
 
 
+def _apply_auto_fill_word(doc, report_number):
+    """自动填充模式（Word 版）：遍历所有表格的所有单元格，把 ____ 替换为合理示例值。
+    
+    复用 _guess_fill_value 的判断逻辑，但针对 Word 表格结构调整：
+    - Word 表格每行有多个 cell，第一个 cell 通常是标签或角色名
+    - 通过 cell 所在列索引和同行第一个 cell 的内容判断该填什么
+    """
+    import datetime
+    
+    today = datetime.date.today()
+    today_str = today.strftime("%Y-%m-%d")
+    date_plus = lambda days: (today + datetime.timedelta(days=days)).strftime("%Y-%m-%d")
+    
+    # 角色对应的化名（与 Excel 版保持一致）
+    ROLE_NAMES = {
+        "团队领导（质量工程师）": "张伟",
+        "工艺工程师": "李娜",
+        "设备工程师": "刘强",
+        "生产主管": "陈静",
+        "设计工程师": "赵磊",
+        "SQE（供应商质量工程师）": "周敏",
+        "质量经理（审核）": "王芳",
+        "编制（质量工程师）": "张伟",
+        "审核（质量经理）": "王芳",
+        "批准（质量总监）": "孙健",
+        "客户确认（如需）": "____",
+    }
+    
+    DEPT_PERSON = {
+        "质量部": "张伟",
+        "工艺部": "李娜",
+        "设备部": "刘强",
+        "生产部": "陈静",
+        "研发部": "赵磊",
+        "物流部": "周敏",
+        "销售部": "吴洋",
+    }
+    
+    # 联系方式分机号映射
+    EXT_MAP = {"张伟": "8001", "李娜": "8002", "刘强": "8003", "陈静": "8004",
+               "赵磊": "8005", "周敏": "8006", "王芳": "8007", "孙健": "8008", "吴洋": "8009"}
+    
+    # 责任人轮换
+    PERSON_ROTATION = ["张伟", "李娜", "刘强", "陈静", "周敏", "张伟", "王芳"]
+    
+    # 遍历文档中所有表格
+    for table in doc.tables:
+        for row in table.rows:
+            cells = row.cells
+            if not cells:
+                continue
+            
+            # 获取本行第一个 cell 的内容（用于上下文判断）
+            first_cell_text = cells[0].text.strip() if cells[0].text else ""
+            
+            for col_idx, cell in enumerate(cells, start=1):
+                cell_text = cell.text.strip() if cell.text else ""
+                
+                # 只处理 ____ 或以 ____（ 开头的单元格
+                if cell_text != "____" and not cell_text.startswith("____（"):
+                    continue
+                
+                # 获取左侧 cell 的内容
+                left_val = cells[col_idx - 2].text.strip() if col_idx > 1 and col_idx - 2 < len(cells) else ""
+                
+                replacement = _guess_fill_value(
+                    left_val=left_val,
+                    first_col_val=first_cell_text,
+                    col_idx=col_idx,
+                    role_names=ROLE_NAMES,
+                    dept_person=DEPT_PERSON,
+                    today_str=today_str,
+                    date_plus=date_plus,
+                    report_number=report_number,
+                )
+                
+                if replacement:
+                    # 清空 cell 并写入新值
+                    # Word cell 可能有多个 paragraph，清空第一个之外的，写第一个
+                    for p in cell.paragraphs[1:]:
+                        p.clear()
+                    if cell.paragraphs:
+                        cell.paragraphs[0].text = replacement
+                    else:
+                        cell.text = replacement
+
+
 def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person, today_str, date_plus, report_number):
     """根据上下文猜测 ____ 应该填什么值。返回 None 表示无法判断，保留 ____"""
     left_val_clean = left_val.strip()
@@ -1184,7 +1271,7 @@ def set_page_header(doc, report_number):
     set_run_font(run, size=9, color="666666")
 
 
-def generate_word(context, template, output_path, report_number):
+def generate_word(context, template, output_path, report_number, auto_fill=False):
     """生成 Word 文档。"""
     doc = Document()
 
@@ -1549,6 +1636,11 @@ def generate_word(context, template, output_path, report_number):
     end_run = end_p.add_run(f"8D 报告编号：{report_number}")
     set_run_font(end_run, size=9, color="666666")
 
+    # 自动填充模式：遍历所有表格，把 ____ 替换为合理示例值
+    if auto_fill:
+        _apply_auto_fill_word(doc, report_number)
+        print(f"[INFO] Word 已启用自动填充模式，所有 ____ 已替换为示例值")
+
     doc.save(output_path)
     print(f"[OK] Word 已生成：{output_path}")
 
@@ -1670,7 +1762,7 @@ def main():
     generate_excel(context, template, excel_path, report_number, auto_fill=args.auto_fill)
 
     # 生成 Word
-    generate_word(context, template, word_path, report_number)
+    generate_word(context, template, word_path, report_number, auto_fill=args.auto_fill)
 
     # 输出 JSON 结果供调用方解析
     result = {

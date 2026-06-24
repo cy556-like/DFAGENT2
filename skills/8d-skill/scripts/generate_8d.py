@@ -446,7 +446,7 @@ def _apply_auto_fill(ws, report_number):
             if cell.value is None:
                 continue
             val = str(cell.value).strip()
-            if val != "____" and not val.startswith("____（"):
+            if val != "____" and not val.startswith("____（") and not val.startswith("请填写"):
                 continue
             
             # 获取同行左侧单元格内容，用于上下文判断
@@ -457,6 +457,7 @@ def _apply_auto_fill(ws, report_number):
             first_col_val = str(ws.cell(row=cell.row, column=1).value or "")
             
             # 判断字段类型并填充
+            # 先尝试通用填充
             replacement = _guess_fill_value(
                 left_val=left_val,
                 first_col_val=first_col_val,
@@ -467,6 +468,10 @@ def _apply_auto_fill(ws, report_number):
                 date_plus=date_plus,
                 report_number=report_number,
             )
+            
+            # 如果通用填充没匹配，尝试根据 val 内容激进填充
+            if not replacement and val:
+                replacement = _aggressive_fill(val, left_val, first_col_val, today_str, date_plus)
             
             if replacement:
                 cell.value = replacement
@@ -531,7 +536,7 @@ def _apply_auto_fill_word(doc, report_number):
                 cell_text = cell.text.strip() if cell.text else ""
                 
                 # 只处理 ____ 或以 ____（ 开头的单元格
-                if cell_text != "____" and not cell_text.startswith("____（"):
+                if cell_text != "____" and not cell_text.startswith("____（") and not cell_text.startswith("请填写"):
                     continue
                 
                 # 获取左侧 cell 的内容
@@ -548,15 +553,72 @@ def _apply_auto_fill_word(doc, report_number):
                     report_number=report_number,
                 )
                 
+                # 如果通用填充没匹配，尝试根据 cell_text 内容激进填充
+                if not replacement and cell_text:
+                    replacement = _aggressive_fill(cell_text, left_val, first_cell_text, today_str, date_plus)
+                
                 if replacement:
                     # 清空 cell 并写入新值
-                    # Word cell 可能有多个 paragraph，清空第一个之外的，写第一个
                     for p in cell.paragraphs[1:]:
                         p.clear()
                     if cell.paragraphs:
                         cell.paragraphs[0].text = replacement
                     else:
                         cell.text = replacement
+
+
+def _aggressive_fill(val, left_val, first_col_val, today_str, date_plus):
+    """激进填充模式：对 _guess_fill_value 无法处理的占位符，根据内容直接填示例值。
+    用户启用 auto_fill 时调用，确保所有空白都被填上。
+    """
+    val_clean = val.strip()
+    left_clean = left_val.strip() if left_val else ""
+    first_clean = first_col_val.strip() if first_col_val else ""
+    
+    # D4 5Why 答案（"请填写：..." 开头）
+    if val_clean.startswith("请填写：方向"):
+        return "方向①设备/工装异常：物流转运过程外力冲击导致凹陷（示例）"
+    if val_clean.startswith("请填写：基于 Why 1"):
+        return "包装方案未针对轮毂形状设计有效缓冲结构（示例）"
+    if val_clean.startswith("请填写：定位到具体的监控点"):
+        return "包装验证职责归属不明确，工艺/物流/采购互相推诿，监控点失效（示例）"
+    if val_clean.startswith("请填写：定位到具体的 SOP"):
+        return "部门职责划分文件中未明确包装验证责任归属，SOP存在空白（示例）"
+    if val_clean.startswith("请填写：定位到体系/规范"):
+        return "管理制度不透明，未建立R&R职责矩阵，跨部门协作事项无人负责（示例）"
+    
+    # D4 6M 判定列
+    if val_clean.startswith("____（根因/贡献因子"):
+        if "法" in left_clean:
+            return "根因"
+        if "人" in left_clean:
+            return "贡献因子"
+        return "排除"
+    
+    # D4 RC1/RC2/RC3 总结
+    if val_clean.startswith("请填写直接原因"):
+        return "包装缓冲不足，物流转运外力冲击导致凹陷（示例）"
+    if val_clean.startswith("请填写管理原因"):
+        return "包装验证职责不清，跨部门协作机制缺失（示例）"
+    if val_clean.startswith("请填写系统原因"):
+        return "管理制度不透明，未建立R&R职责矩阵（示例）"
+    
+    # Where 字段
+    if val_clean.startswith("____（工序"):
+        return "客户IQC来料检验（示例）"
+    
+    # 兜底：所有剩余 ____ 都填示例标记
+    if val_clean == "____":
+        return "（示例数据，请替换为实际值）"
+    if val_clean.startswith("____（"):
+        import re as _re
+        m = _re.search(r'____（([^）]+)', val_clean)
+        if m:
+            hint = m.group(1)
+            return f"（示例：{hint}）"
+        return "（示例数据）"
+    
+    return None
 
 
 def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person, today_str, date_plus, report_number):
@@ -602,7 +664,7 @@ def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person,
         if col_idx == 4:  # D3 完成时间列
             return date_plus(2 + seq)  # 2/3/4/5/6 天后
         if col_idx == 5:  # D3 验证方法列
-            return "____（如100%全检记录/不良率对比）"  # 保留原提示
+            return "100%全检记录：检验XX件，发现不良XX件（示例）"
         # D5 表格列: 序号/CA方案/针对根因/可行性/风险评估/决策
         # D6 表格列: 序号/实施措施/目标根因/责任人/完成时间/状态/验证结果
         # D7 表格列: 序号/横向展开措施/推广范围/责任人/完成时间/状态
@@ -617,7 +679,7 @@ def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person,
         if col_idx == 5:  # D6 完成时间列
             return date_plus(7 + seq * 3)  # 7/10/13/16/19 天后
         if col_idx == 7:  # D6 验证结果列
-            return "____（验证数据见 D6 末尾）"
+            return "已完成验证，连续30天数据达标（示例）"
         # D7 责任人列（第4列）、完成时间列（第5列）
         if col_idx == 4:
             return person_rotation[min(seq - 1, len(person_rotation) - 1)]
@@ -636,11 +698,11 @@ def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person,
     if left_val_clean == "客户反馈渠道":
         return "邮件"
     if left_val_clean == "产品编号 / 零件号":
-        return "____（请补充实际零件号）"
+        return "WH-2026-001（示例）"
     if left_val_clean == "批次号":
         return f"B{today_str.replace('-', '')}01"
     if left_val_clean == "不良数量":
-        return "____（请补充实际不良件数）"
+        return "12 件（示例）"
     if left_val_clean == "8D 负责人":
         return "张伟"
     
@@ -650,7 +712,7 @@ def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person,
     if left_val_clean == "Who（谁发现的）":
         return "客户 IQC 检验员"
     if left_val_clean == "Why（为什么是问题）":
-        return "____（违反的标准/规格要求）"
+        return "违反客户外观标准，影响产品功能（示例）"
     if left_val_clean == "How（如何发现）":
         return "100% 外观目视检查"
     
@@ -658,11 +720,11 @@ def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person,
     if left_val_clean == "遏制开始日期":
         return date_plus(-2)
     if left_val_clean == "遏制后不良率（24h内）":
-        return "____ PPM（请填写实际数据）"
+        return "0 PPM（示例，已隔离不良品）"
     if left_val_clean == "遏制后不良率（72h内）":
-        return "____ PPM（请填写实际数据）"
+        return "0 PPM（示例，已隔离不良品）"
     if left_val_clean == "遏制结论":
-        return "____（达标/未达标，是否需要继续遏制）"
+        return "达标，遏制后不良率降至0 PPM（示例）"
     if left_val_clean == "遏制措施截止日期":
         return date_plus(7)
     if left_val_clean == "客户是否认可":
@@ -672,7 +734,7 @@ def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person,
     if left_val_clean == "验证方法":
         return "现场观察 + 数据收集"
     if left_val_clean == "验证数据":
-        return "____（请补充实际验证数据）"
+        return "连续30天数据，不良率从500 PPM降至50 PPM（示例）"
     if left_val_clean == "验证结论":
         return "待进一步验证"
     if left_val_clean == "验证人 / 日期":
@@ -680,11 +742,11 @@ def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person,
     
     # 8. D7 PFMEA 更新表的空白
     if left_val_clean == "本次失效模式":
-        return "____（请补充实际失效模式描述）"
+        return "轮毂凹陷（包装缓冲不足导致）（示例）"
     if left_val_clean == "原 RPN":
-        return "____（请补充原 RPN 值）"
+        return "270（S=9, O=5, D=6）（示例）"
     if left_val_clean == "更新后 RPN":
-        return "____（请补充更新后 RPN 值）"
+        return "80（S=9, O=2, D=4）（示例）"
     if left_val_clean == "PFMEA 更新人 / 日期":
         return f"李娜 / {today_str}"
     
@@ -700,21 +762,21 @@ def _guess_fill_value(left_val, first_col_val, col_idx, role_names, dept_person,
     if left_val_clean == "横向展开是否完成":
         return "否（待展开）"
     if left_val_clean == "关闭日期":
-        return "____（待所有 CA 完成后填写）"
+        return "2026-07-30（示例）"
     if left_val_clean == "关闭结论":
         return "暂不关闭，待所有 CA 实施并验证"
     if left_val_clean == "本次问题处理经验":
-        return "____（待 8D 关闭时总结）"
+        return "包装验证职责需在R&R矩阵中明确，避免跨部门推诿（示例）"
     if left_val_clean == "可改进之处":
-        return "____（待 8D 关闭时总结）"
+        return "包装验证职责需在R&R矩阵中明确，避免跨部门推诿（示例）"
     if left_val_clean == "对其他产品的启示":
-        return "____（待 8D 关闭时总结）"
+        return "包装验证职责需在R&R矩阵中明确，避免跨部门推诿（示例）"
     if left_val_clean == "建议改进的管理流程":
-        return "____（待 8D 关闭时总结）"
+        return "包装验证职责需在R&R矩阵中明确，避免跨部门推诿（示例）"
     
     # 10. D5/D6 验证结论的空白
     if left_val_clean == "有效性验证":
-        return "____（需至少30天连续数据，不良率降至目标值）"
+        return "需至少30天连续数据，不良率降至目标值50 PPM以下（示例）"
     
     # 无法判断的字段，保留 ____
     return None

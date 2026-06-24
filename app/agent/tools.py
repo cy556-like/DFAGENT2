@@ -853,11 +853,11 @@ def generate_8d_report_tool(
         if not os.path.exists(script_path):
             return f"【8D报告生成失败】未找到脚本: {script_path}。请确认 skills/8d-skill/scripts/generate_8d.py 已部署。"
 
-        # 输出目录：data/export/{session_id}
-        session_id = get_current_session_id() or ""
+        # 输出目录：data/export/（根目录，不走 session_id 子目录）
+        # 原因：下载端点 /api/v1/documents/export-download/{filename} 会先搜子目录再搜根目录
+        # 但如果 session_id 不为空，文件存在子目录里，下载端点遍历子目录可能因各种原因找不到
+        # 8D 报告文件直接存根目录，下载端点的"根目录查找"能 100% 命中
         export_dir = os.path.join(settings.DATA_DIR, "export")
-        if session_id:
-            export_dir = os.path.join(export_dir, session_id)
         os.makedirs(export_dir, exist_ok=True)
 
         # 构造命令
@@ -932,6 +932,15 @@ def generate_8d_report_tool(
                 xlsx_name = os.path.basename(xlsx_path) if xlsx_path else ""
                 docx_name = os.path.basename(docx_path) if docx_path else ""
 
+                # 🔴 关键验证：检查文件是否真的存在
+                xlsx_exists = xlsx_path and os.path.exists(xlsx_path)
+                docx_exists = docx_path and os.path.exists(docx_path)
+                
+                if not xlsx_exists and not docx_exists:
+                    return f"【8D报告生成失败】脚本报告成功但文件不存在。\nxlsx_path: {xlsx_path}\ndocx_path: {docx_path}\nstdout: {stdout[-300:]}"
+                
+                logger.info(f"[8D] 文件验证: xlsx={'存在' if xlsx_exists else '不存在'} ({xlsx_path}), docx={'存在' if docx_exists else '不存在'} ({docx_path})")
+
                 # 生成下载链接（前端会拦截这些 URL）
                 xlsx_url = f"/api/v1/documents/export-download/{xlsx_name}" if xlsx_name else ""
                 docx_url = f"/api/v1/documents/export-download/{docx_name}" if docx_name else ""
@@ -944,18 +953,20 @@ def generate_8d_report_tool(
                     modes_enabled.append("自动填充模式（人名/日期/责任人已填示例值）")
                 modes_str = " + ".join(modes_enabled) if modes_enabled else "默认模式（空白处留 ____）"
                 
+                # 构建返回消息（标注文件是否存在）
+                xlsx_line = f"📄 Excel 文件：{xlsx_name}\n下载链接：{xlsx_url}\n" if xlsx_exists else f"📄 Excel 文件：生成失败\n"
+                docx_line = f"📝 Word 文件：{docx_name}\n下载链接：{docx_url}\n" if docx_exists else f"📝 Word 文件：生成失败\n"
+                
                 return (
                     f"【8D报告生成成功】\n"
                     f"报告编号：{report_number}\n"
                     f"匹配模板：{matched_template}\n"
                     f"启用模式：{modes_str}\n\n"
-                    f"📄 Excel 文件：{xlsx_name}\n"
-                    f"下载链接：{xlsx_url}\n"
+                    f"{xlsx_line}"
                     f"说明：单 Sheet 完整 Excel，含合并单元格+章节标题+交替行底色+根因高亮，可继续编辑\n\n"
-                    f"📝 Word 文件：{docx_name}\n"
-                    f"下载链接：{docx_url}\n"
+                    f"{docx_line}"
                     f"说明：标准 8D Word 文档，可直接提交客户\n\n"
-                    f"【重要】你必须在回复中完整展示上面的两个下载链接 URL，前端依赖这些 URL 生成下载按钮。\n"
+                    f"【重要】你必须在回复中完整展示上面的下载链接 URL，前端依赖这些 URL 生成下载按钮。\n"
                     f"【重要】不要在对话中重复输出 8D 报告的完整内容，用户可以直接下载文件查看。\n"
                     f"只需简要告诉用户：报告已生成、匹配了什么模板、{'空白处已填示例值' if effective_auto_fill else '空白处需补充实际数据'}。"
                 )

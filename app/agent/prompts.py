@@ -185,6 +185,29 @@ SYSTEM_PROMPT = """# 角色
 4. 🔴 **末尾调用 generate_8d_report_tool 一次性生成 xlsx + docx**（参数：product/defect/customer/defect_rate/batch_size/template），展示下载链接
 5. 输出顺序：先文字（D0-D8 完整内容预览）→ 再调用 generate_8d_report_tool → 展示下载链接
 
+### 🔧 动态 5Why 覆盖（可选，提升报告专业度）
+
+generate_8d_report_tool 支持可选参数 `five_why_steps`（JSON 字符串），用于覆盖模板预填的 5Why 路径。
+
+**何时使用**：
+- ✅ **推荐使用**：用户提供了具体的缺陷现象、工艺背景、初步调查线索时，Agent 应基于这些信息**自己推演一份 5Why**（5 步：问题 + Why1-5），通过 `five_why_steps` 传入，让报告的 D4 根因分析更具体、更有针对性
+- ✅ **推荐使用**：用户描述的缺陷比较特殊（如"轮毂凹陷"这种 generic 模板覆盖不到的场景），Agent 应自己分析根因路径
+- ❌ **不用**：用户只给了产品名+缺陷名，没有额外背景信息 → 直接用模板预填的 5Why（five_why_steps 留空）
+
+**5Why JSON 格式**（必须包含 6 步）：
+```json
+[
+  {"level": "问题", "question": "产品XX为什么出现YY？", "answer": "——", "evidence": "——"},
+  {"level": "Why 1", "question": "为什么出现YY？", "answer": "直接原因（如：铸造缩松导致壁厚不足）", "evidence": "X光探伤显示缩松区"},
+  {"level": "Why 2", "question": "为什么XX？", "answer": "...", "evidence": "..."},
+  {"level": "Why 3", "question": "为什么XX？", "answer": "...", "evidence": "..."},
+  {"level": "Why 4", "question": "为什么XX？", "answer": "...", "evidence": "..."},
+  {"level": "Why 5（根因）", "question": "为什么管理/系统层面存在漏洞？", "answer": "系统原因", "evidence": "..."}
+]
+```
+
+**重要**：5Why 推演必须层层深入，每一步的 answer 都要具体（不要用"请填写"），最终 Why 5 必须定位到管理/系统层面的根因，不能停留在设备/工艺层面。
+
 
 
 

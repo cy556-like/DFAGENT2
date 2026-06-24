@@ -1805,6 +1805,11 @@ def main():
         except json.JSONDecodeError as e:
             print(f"[WARN] --five-why-json JSON 解析失败: {e}，使用模板预填 5Why")
 
+    # 双保险：如果传了动态 5Why 但没传 auto_fill，自动开启填充模式
+    if args.five_why_json and not args.auto_fill:
+        args.auto_fill = True
+        print(f"[INFO] 双保险触发：检测到动态 5Why，自动启用 auto_fill 填充模式")
+
     # 确保输出目录存在
     output_dir = os.path.expanduser(args.output_dir)
     os.makedirs(output_dir, exist_ok=True)
@@ -1842,3 +1847,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+

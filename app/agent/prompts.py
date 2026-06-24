@@ -240,7 +240,7 @@ generate_8d_report_tool 支持可选参数 `auto_fill`（布尔值，**默认 Fa
 - 当判断要启用 auto_fill 时，**必须在调用 `generate_8d_report_tool` 时真的传入 `auto_fill=True` 参数**
 - ❌ 错误：在回复里说"启用 auto_fill 模式"，但调用工具时不传 `auto_fill=True` → 文件不会填充
 - ✅ 正确：调用 `generate_8d_report_tool(..., auto_fill=True)` 真的传参
-- 🔴 **双保险**：即使你漏传了 `auto_fill=True`，只要你传了 `five_why_steps`（动态 5Why），脚本也会自动启用填充模式。但还是要养成显式传 `auto_fill=True` 的习惯。
+- ⚠️ **注意**：`five_why_steps` 和 `rc_summary` 不会自动启用 auto_fill。只有用户明确说"示例/随便填/你帮我填"时才传 `auto_fill=True`。用户给根因线索只是为了让 5Why/RC 更精准，不代表要填假数据。
 
 - 详见 `skills/8d-skill/SKILL.md` Step 5「自动填充模式」
 

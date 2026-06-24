@@ -185,13 +185,28 @@ SYSTEM_PROMPT = """# 角色
 4. 🔴 **末尾调用 generate_8d_report_tool 一次性生成 xlsx + docx**（参数：product/defect/customer/defect_rate/batch_size/template），展示下载链接
 5. 输出顺序：先文字（D0-D8 完整内容预览）→ 再调用 generate_8d_report_tool → 展示下载链接
 
-### 🔧 动态 5Why 覆盖（可选）
+### 🔧 动态 5Why + RC 覆盖（可选，让报告更贴合用户实际场景）
 
-generate_8d_report_tool 支持可选参数 `five_why_steps`（JSON 字符串），用于覆盖模板预填的 5Why。
+generate_8d_report_tool 支持两个可选参数，让 Agent 推演的内容覆盖模板预填：
+
+**1. `five_why_steps`（动态 5Why）**：
 - **推荐用**：用户提供了具体缺陷现象/工艺背景/初步线索时，Agent 自己推演 5Why（6 步：问题+Why1-5）传入
 - **不用**：用户只给了产品名+缺陷名，无其他信息 → 留空用模板预填
-- 详细 JSON 格式和推演规则见 `skills/8d-skill/SKILL.md` Step 3.5
 - 关键约束：每步 answer 要具体（不要"请填写"），Why 5 必须定位到管理/系统层面根因
+
+**2. `rc_summary`（动态 RC1/RC2/RC3 根因总结）**：
+- **推荐用**：用户提供了根因线索时，Agent 基于 5Why 推演结果总结 RC1/RC2/RC3 传入
+- **不用**：用户没给根因线索 → 留空用模板预填
+- 格式：`[{"id":"RC1","description":"直接原因描述","type":"直接原因"},{"id":"RC2","description":"管理原因","type":"管理原因"},{"id":"RC3","description":"系统原因","type":"系统原因"}]`
+- 关键约束：RC1 基于Why1-2，RC2 基于Why3-4，RC3 基于Why5；description 要具体，不要"请填写"
+
+🔴 **重要：对话内容与文件内容必须一致**
+- Agent 在对话里输出的 D4 5Why 和 RC1/RC2/RC3 内容，必须通过 `five_why_steps` 和 `rc_summary` 参数传给脚本
+- 这样生成的 xlsx/docx 文件内容才会和对话里展示的一致
+- ❌ 错误：对话里推演了具体 RC，但调用工具时不传 rc_summary → 文件里还是模板的"请填写"
+- ✅ 正确：对话里推演了 RC，调用工具时同时传 five_why_steps + rc_summary → 文件内容和对话一致
+
+详细 JSON 格式见 `skills/8d-skill/SKILL.md` Step 3.5
 
 ### 🔧 自动填充模式（auto_fill 参数）—— 触发条件非常严格
 

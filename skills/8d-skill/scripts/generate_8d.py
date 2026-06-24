@@ -319,9 +319,7 @@ def write_table(ws, start_row, headers, rows, col_widths, root_cause_row_indices
     # 设置列宽
     set_column_widths(ws, col_widths)
 
-    # 冻结首行
-    ws.freeze_panes = ws.cell(row=start_row + 1, column=1)
-
+    # 注意：冻结窗格已移到 generate_excel 末尾统一设置（避免多次设置互相覆盖）
     return start_row + 1 + len(rows)
 
 
@@ -707,6 +705,10 @@ def generate_excel(context, template, output_path, report_number):
     cell = ws.cell(row=row, column=1, value=f"8D 报告编号：{report_number}")
     cell.font = Font(name=FONT_NAME, size=10, italic=True, color="666666")
     cell.alignment = Alignment(horizontal="right", vertical="center")
+
+    # 冻结窗格：只冻结第 1 行（标题行），不冻结列
+    # 这样用户向下滚动时标题始终可见，且不会锁定中间表格的滚动
+    ws.freeze_panes = "A2"
 
     wb.save(output_path)
     print(f"[OK] Excel 已生成：{output_path}")

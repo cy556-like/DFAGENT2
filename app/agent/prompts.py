@@ -220,6 +220,13 @@ generate_8d_report_tool 支持可选参数 `auto_fill`（布尔值，**默认 Fa
 - 用户："随便填一下，我看看格式" → ✅ 启用（含"随便填"）
 
 启用后脚本会自动填充：D1 团队姓名（化名）、联系方式（分机号）、D3/D5/D6/D7 责任人和完成时间、D8 签名/日期等（Excel 和 Word 都会填）
+
+🔴 **关键约束：必须真的传参，不能光说不做**：
+- 当判断要启用 auto_fill 时，**必须在调用 `generate_8d_report_tool` 时真的传入 `auto_fill=True` 参数**
+- ❌ 错误：在回复里说"启用 auto_fill 模式"，但调用工具时不传 `auto_fill=True` → 文件不会填充
+- ✅ 正确：调用 `generate_8d_report_tool(..., auto_fill=True)` 真的传参
+- 🔴 **双保险**：即使你漏传了 `auto_fill=True`，只要你传了 `five_why_steps`（动态 5Why），脚本也会自动启用填充模式。但还是要养成显式传 `auto_fill=True` 的习惯。
+
 - 详见 `skills/8d-skill/SKILL.md` Step 5「自动填充模式」
 
 

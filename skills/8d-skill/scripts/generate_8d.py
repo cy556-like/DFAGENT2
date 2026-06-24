@@ -558,13 +558,34 @@ def _apply_auto_fill_word(doc, report_number):
                     replacement = _aggressive_fill(cell_text, left_val, first_cell_text, today_str, date_plus)
                 
                 if replacement:
-                    # 清空 cell 并写入新值
-                    for p in cell.paragraphs[1:]:
-                        p.clear()
-                    if cell.paragraphs:
-                        cell.paragraphs[0].text = replacement
-                    else:
-                        cell.text = replacement
+                    # 清空 cell 并写入新值（用更健壮的方式）
+                    # 方法：清空所有 paragraph 的所有 run，然后在第一个 paragraph 写入新 run
+                    try:
+                        # 清空第一个 paragraph 的所有 run
+                        if cell.paragraphs:
+                            first_para = cell.paragraphs[0]
+                            # 删除所有现有 run
+                            for run in first_para.runs:
+                                run.text = ""
+                            # 如果没有 run，创建一个
+                            if not first_para.runs:
+                                first_para.add_run(replacement)
+                            else:
+                                # 在第一个 run 写入新值
+                                first_para.runs[0].text = replacement
+                            # 删除其他 paragraph
+                            for p in cell.paragraphs[1:]:
+                                p_element = p._element
+                                p_element.getparent().remove(p_element)
+                        else:
+                            # 没有 paragraph，直接用 cell.text
+                            cell.text = replacement
+                    except Exception as e:
+                        # 兜底：用 cell.text
+                        try:
+                            cell.text = replacement
+                        except Exception:
+                            pass
 
 
 def _aggressive_fill(val, left_val, first_col_val, today_str, date_plus):

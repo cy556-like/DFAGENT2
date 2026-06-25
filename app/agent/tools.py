@@ -849,6 +849,123 @@ def generate_8d_report_tool(
     import json as _json
     import re as _re
 
+    # ── JSON 修复函数：LLM 生成的 JSON 常见错误自动修复 ──
+    def _repair_llm_json(raw: str) -> str:
+        """尝试修复 LLM 生成的常见 JSON 格式错误。
+
+        常见问题：
+        1. 中文标点混入：，→,  ：→: 或 ,  "→"  "→"
+        2. 缺少逗号：相邻 }{ 或 ][ 或 }[ 或 ]{ 之间缺逗号
+        3. 尾部多余逗号：},] 或 ,}
+        4. 值中有未转义的换行符
+        5. 单引号代替双引号
+        6. 缺少引号的 key
+        7. "value""key": 之间缺逗号
+        8. "value":"key": 冒号误用为分隔符
+        """
+        s = raw.strip()
+        if not s:
+            return s
+
+        # 1. 中文左右引号 "…" 替换为英文 "
+        s = s.replace('\u201c', '"')   # " → "
+        s = s.replace('\u201d', '"')   # " → "
+        s = s.replace('\u2018', "'")   # ' → '
+        s = s.replace('\u2019', "'")   # ' → '
+
+        # 2. 中文逗号替换为英文逗号
+        s = s.replace('\uff0c', ',')   # ，→ ,
+        s = s.replace('\uff08', '(')   # （→ (
+        s = s.replace('\uff09', ')')   # ）→ )
+
+        # 3. 中文冒号：先统一替换为英文冒号，后面再修复"冒号误用为分隔符"的情况
+        s = s.replace('\uff1a', ':')   # ：→ :
+
+        # 4. 单引号 → 双引号
+        s = s.replace("'", '"')
+
+        # 5. 修复冒号误用为属性分隔符的情况：
+        #    LLM 有时生成 {"key1":"value1"："key2":"value2"}
+        #    替换后变成 {"key1":"value1":"key2":"value2"}
+        #    规则：如果 "xxx":"yyy":"zzz" 中间的冒号实际上应该是逗号
+        #    检测模式："非冒号内容":"内容":"字母开头"  中间冒号改为逗号
+        #    即 "value":"key": 模式中，第一个冒号后的值结束后的冒号应该是逗号
+        #    更安全的做法：反复查找 "string":"string": 并在中间加逗号
+        #    但要注意不要误改 "key":"value" 的正常模式
+        #    关键洞察：正常JSON中，冒号只出现在 "key": 后面，不会出现在 "value" 后面
+        #    所以如果 ":" 出现在一个看起来是value的引号字符串后面，且后面又跟着 "key":
+        #    那这个冒号应该是逗号
+        #    简化实现：匹配 "非空字符串":"非空字符串": 并将第二个冒号及后面的模式改为 ,
+        #    反复执行直到没有更多匹配
+        for _ in range(10):  # 最多修复10轮，避免无限循环
+            # 匹配："xxx":"yyy":  其中 yyy 不是以 { [ 开头
+            # 这里的冒号应该改为逗号
+            new_s = _re.sub(
+                r'("(?:[^"\\]|\\.)*")\s*:\s*("(?:[^"\\]|\\.)*")\s*:',
+                r'\1:\2,',
+                s
+            )
+            if new_s == s:
+                break
+            s = new_s
+
+        # 6. 修复缺少逗号的情况：}{  →  },{   ][  →  ],[
+        s = _re.sub(r'\}\s*\{', '},{', s)
+        s = _re.sub(r'\]\s*\[', '],[', s)
+        s = _re.sub(r'\}\s*\[', '},[', s)
+        s = _re.sub(r'\]\s*\{', '],{', s)
+
+        # 7. 去掉尾部多余逗号：,]  →  ]  ,}  →  }
+        s = _re.sub(r',\s*\]', ']', s)
+        s = _re.sub(r',\s*\}', '}', s)
+
+        # 8. 修复值中未转义的换行符（在双引号内的裸换行）
+        def _fix_newlines_in_strings(m):
+            content = m.group(1)
+            content = content.replace('\n', '\\n')
+            content = content.replace('\r', '')
+            return '"' + content + '"'
+        s = _re.sub(r'"((?:[^"\\]|\\.)*)"', _fix_newlines_in_strings, s, flags=_re.DOTALL)
+
+        # 9. 修复缺少引号的 key：如  {id:"RC1"}  →  {"id":"RC1"}
+        s = _re.sub(r'([{\[,])\s*([a-zA-Z_]\w*)\s*:', r'\1"\2":', s)
+
+        # 10. 修复 "value""key":  →  "value","key":（值和下一个key之间缺逗号）
+        s = _re.sub(r'"\s+"([a-zA-Z_])', r'",\1', s)
+
+        return s
+
+    def _safe_parse_json(raw: str, label: str = ""):
+        """安全解析 JSON，先尝试原始解析，失败则尝试修复后解析。"""
+        if not raw or not raw.strip():
+            return None
+        raw = raw.strip()
+        # 第一次：直接解析
+        try:
+            return _json.loads(raw)
+        except _json.JSONDecodeError:
+            pass
+        # 第二次：修复后解析
+        try:
+            repaired = _repair_llm_json(raw)
+            result = _json.loads(repaired)
+            logger.info(f"[8D] {label} JSON 修复成功（原始格式有误，已自动修复）")
+            return result
+        except _json.JSONDecodeError as e2:
+            logger.warning(f"[8D] {label} JSON 修复后仍无法解析: {e2}")
+            # 第三次：终极修复 — 用正则暴力提取关键字段
+            try:
+                # 尝试用 ast.literal_eval 作为最后手段
+                import ast
+                # 替换 True/False/None 为 Python 字面量
+                py_str = raw.replace('true', 'True').replace('false', 'False').replace('null', 'None')
+                result = ast.literal_eval(py_str)
+                logger.info(f"[8D] {label} JSON 通过 ast.literal_eval 修复成功")
+                return result
+            except Exception:
+                logger.warning(f"[8D] {label} JSON 所有修复方式均失败，忽略该参数")
+                return None
+
     try:
         # 定位 generate_8d.py 脚本路径
         # settings.DATA_DIR 是项目根/data，脚本在 项目根/skills/8d-skill/scripts/generate_8d.py
@@ -881,26 +998,30 @@ def generate_8d_report_tool(
         # 如果传入了动态 5Why，加 --five-why-json 参数
         has_dynamic_5why = False
         if five_why_steps and five_why_steps.strip():
-            # 简单校验 JSON 格式
-            try:
-                _json.loads(five_why_steps)
-                cmd.extend(["--five-why-json", five_why_steps])
-                logger.info(f"[8D] 启用动态 5Why 覆盖（{len(five_why_steps)} chars）")
+            # 尝试解析 JSON（含自动修复）
+            parsed_5why = _safe_parse_json(five_why_steps, "five_why_steps")
+            if parsed_5why is not None:
+                # 序列化回标准 JSON 字符串（确保格式正确）
+                clean_5why_json = _json.dumps(parsed_5why, ensure_ascii=False)
+                cmd.extend(["--five-why-json", clean_5why_json])
+                logger.info(f"[8D] 启用动态 5Why 覆盖（{len(clean_5why_json)} chars）")
                 has_dynamic_5why = True
-            except _json.JSONDecodeError as e:
-                logger.warning(f"[8D] five_why_steps JSON 格式错误，忽略: {e}")
-                # 不阻断流程，继续用模板预填 5Why
+            else:
+                logger.warning(f"[8D] five_why_steps JSON 无法解析（已尝试修复），继续用模板预填 5Why")
 
         # 如果传入了动态 RC 总结，加 --rc-summary-json 参数
         has_rc_summary = False
         if rc_summary and rc_summary.strip():
-            try:
-                _json.loads(rc_summary)
-                cmd.extend(["--rc-summary-json", rc_summary])
-                logger.info(f"[8D] 启用动态 RC 覆盖（{len(rc_summary)} chars）")
+            # 尝试解析 JSON（含自动修复）
+            parsed_rc = _safe_parse_json(rc_summary, "rc_summary")
+            if parsed_rc is not None:
+                # 序列化回标准 JSON 字符串（确保格式正确）
+                clean_rc_json = _json.dumps(parsed_rc, ensure_ascii=False)
+                cmd.extend(["--rc-summary-json", clean_rc_json])
+                logger.info(f"[8D] 启用动态 RC 覆盖（{len(clean_rc_json)} chars）")
                 has_rc_summary = True
-            except _json.JSONDecodeError as e:
-                logger.warning(f"[8D] rc_summary JSON 格式错误，忽略: {e}")
+            else:
+                logger.warning(f"[8D] rc_summary JSON 无法解析（已尝试修复），继续用模板预填 RC")
 
         # 🔴 关键修复：auto_fill 只能由用户明确要求触发
         # 用户给根因线索（five_why_steps）≠ 要示例，只是让 5Why 更精准

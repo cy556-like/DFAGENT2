@@ -347,6 +347,63 @@ def _calc_row_height(row_data, col_widths, line_height=22, min_height=25, max_he
     return max(min_height, min(max_height, calculated_height))
 
 
+def _recalc_all_row_heights(ws, line_height=22, min_height=25, max_height=409):
+    """重新计算整个工作表所有行的行高（基于实际单元格内容和列宽）。
+
+    这是在所有内容写入完成、auto_fill 执行完毕后调用的最终修正步骤。
+    确保每个单元格的文字都完整显示，行高由该行文字最多的列决定。
+
+    处理逻辑：
+    1. 遍历每一行
+    2. 对每个有内容的单元格，根据文本长度和列宽计算所需行数
+    3. 合并单元格的宽度 = 涉及所有列宽之和
+    4. 取该行所有单元格中最大行数，计算行高
+    """
+    for row_idx in range(1, ws.max_row + 1):
+        max_lines = 1
+        has_content = False
+        for col_idx in range(1, ws.max_column + 1):
+            cell = ws.cell(row=row_idx, column=col_idx)
+            if cell.value is None:
+                continue
+            text = str(cell.value)
+            if not text.strip():
+                continue
+            has_content = True
+
+            # 获取该列宽度
+            col_letter = get_column_letter(col_idx)
+            col_w = ws.column_dimensions[col_letter].width or 10
+
+            # 如果是合并单元格，累加所有合并列的宽度
+            effective_width = col_w
+            for merge_range in ws.merged_cells.ranges:
+                if cell.coordinate in merge_range:
+                    total_w = 0
+                    for c in range(merge_range.min_col, merge_range.max_col + 1):
+                        cl = get_column_letter(c)
+                        total_w += ws.column_dimensions[cl].width or 10
+                    effective_width = total_w
+                    break
+
+            # 计算行数
+            effective_width = max(effective_width - 4, 3)
+            segments = text.split('\n')
+            total_lines = 0
+            for segment in segments:
+                if not segment.strip():
+                    total_lines += 1
+                    continue
+                seg_w = _display_width(segment)
+                lines_needed = max(1, -(-seg_w // effective_width))
+                total_lines += lines_needed
+            max_lines = max(max_lines, max(1, total_lines))
+
+        if has_content:
+            calculated_height = max_lines * line_height + 8
+            ws.row_dimensions[row_idx].height = max(min_height, min(max_height, calculated_height))
+
+
 def set_column_widths(ws, widths):
     """设置列宽。"""
     for i, w in enumerate(widths, start=1):
@@ -1223,6 +1280,9 @@ def generate_excel(context, template, output_path, report_number, auto_fill=Fals
         _apply_auto_fill(ws, report_number)
         print(f"[INFO] 已启用自动填充模式，所有 ____ 已替换为示例值")
 
+    # ── 最终：重新计算所有行的行高（确保 auto_fill 后行高也正确）──
+    _recalc_all_row_heights(ws)
+
     wb.save(output_path)
     print(f"[OK] Excel 已生成：{output_path}")
 
@@ -1836,6 +1896,24 @@ def parse_args():
         default=None,
         help='动态根因总结（JSON 字符串），覆盖模板预填的 root_cause_summary。格式: [{"id":"RC1","description":"...","type":"直接原因"},...]',
     )
+    parser.add_argument(
+        "--containment-actions-json",
+        required=False,
+        default=None,
+        help='动态 D3 遏制措施（JSON 字符串），覆盖模板预填。格式: ["措施1","措施2",...]',
+    )
+    parser.add_argument(
+        "--permanent-actions-json",
+        required=False,
+        default=None,
+        help='动态 D5-D6 永久纠正措施（JSON 字符串），覆盖模板预填。格式: [{"action":"措施描述","target":"针对根因","responsible":"责任人","due_date":"完成时间"},...]',
+    )
+    parser.add_argument(
+        "--yokoten-actions-json",
+        required=False,
+        default=None,
+        help='动态 D7 横向展开措施（JSON 字符串），覆盖模板预填。格式: ["措施1","措施2",...]',
+    )
     return parser.parse_args()
 
 
@@ -1911,6 +1989,48 @@ def main():
                 print(f"[WARN] --rc-summary-json 解析后非列表或为空，忽略，使用模板预填 RC")
         except json.JSONDecodeError as e:
             print(f"[WARN] --rc-summary-json JSON 解析失败: {e}，使用模板预填 RC")
+
+    # 动态 D3 遏制措施覆盖（如果传入了 --containment-actions-json）
+    if args.containment_actions_json:
+        try:
+            custom_actions = json.loads(args.containment_actions_json)
+            if isinstance(custom_actions, list) and len(custom_actions) > 0:
+                if "d3_template" not in template:
+                    template["d3_template"] = {}
+                template["d3_template"]["containment_actions"] = custom_actions
+                print(f"[INFO] 已覆盖 D3 遏制措施：{len(custom_actions)} 条（动态传入）")
+            else:
+                print(f"[WARN] --containment-actions-json 解析后非列表或为空，忽略")
+        except json.JSONDecodeError as e:
+            print(f"[WARN] --containment-actions-json JSON 解析失败: {e}，忽略")
+
+    # 动态 D5-D6 永久纠正措施覆盖（如果传入了 --permanent-actions-json）
+    if args.permanent_actions_json:
+        try:
+            custom_pa = json.loads(args.permanent_actions_json)
+            if isinstance(custom_pa, list) and len(custom_pa) > 0:
+                if "d5_d6_template" not in template:
+                    template["d5_d6_template"] = {}
+                template["d5_d6_template"]["permanent_actions"] = custom_pa
+                print(f"[INFO] 已覆盖 D5-D6 永久纠正措施：{len(custom_pa)} 条（动态传入）")
+            else:
+                print(f"[WARN] --permanent-actions-json 解析后非列表或为空，忽略")
+        except json.JSONDecodeError as e:
+            print(f"[WARN] --permanent-actions-json JSON 解析失败: {e}，忽略")
+
+    # 动态 D7 横向展开措施覆盖（如果传入了 --yokoten-actions-json）
+    if args.yokoten_actions_json:
+        try:
+            custom_yk = json.loads(args.yokoten_actions_json)
+            if isinstance(custom_yk, list) and len(custom_yk) > 0:
+                if "d7_template" not in template:
+                    template["d7_template"] = {}
+                template["d7_template"]["yokoten"] = custom_yk
+                print(f"[INFO] 已覆盖 D7 横向展开措施：{len(custom_yk)} 条（动态传入）")
+            else:
+                print(f"[WARN] --yokoten-actions-json 解析后非列表或为空，忽略")
+        except json.JSONDecodeError as e:
+            print(f"[WARN] --yokoten-actions-json JSON 解析失败: {e}，忽略")
 
     # 确保输出目录存在
     output_dir = os.path.expanduser(args.output_dir)

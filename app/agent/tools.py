@@ -797,6 +797,9 @@ def generate_8d_report_tool(
     template: str = "generic-defect",
     five_why_steps: str = "",
     rc_summary: str = "",
+    containment_actions: str = "",
+    permanent_actions: str = "",
+    yokoten_actions: str = "",
     auto_fill: bool = False
 ) -> str:
     """生成专业的汽车行业 8D 报告（同时生成 xlsx 和 docx 两个文件）。
@@ -834,6 +837,15 @@ def generate_8d_report_tool(
             格式: [{"id":"RC1","description":"直接原因描述","type":"直接原因"},{"id":"RC2","description":"管理原因","type":"管理原因"},{"id":"RC3","description":"系统原因","type":"系统原因"}]
             必须包含 3 条：RC1（直接原因）+ RC2（管理原因）+ RC3（系统原因）
             如果为空字符串，则使用模板预填的 RC 总结
+        containment_actions: 可选，动态 D3 遏制措施（JSON 字符串）。当 Agent 已在对话中输出了遏制措施时传入，覆盖模板预填。
+            格式: ["措施1描述","措施2描述","措施3描述",...]
+            如果为空字符串，则使用模板预填的遏制措施
+        permanent_actions: 可选，动态 D5-D6 永久纠正措施（JSON 字符串）。当 Agent 已在对话中输出了 CA 方案时传入，覆盖模板预填。
+            格式: [{"action":"措施描述","target":"针对根因","responsible":"责任人","due_date":"完成时间"},...]
+            如果为空字符串，则使用模板预填的永久纠正措施
+        yokoten_actions: 可选，动态 D7 横向展开措施（JSON 字符串）。当 Agent 已在对话中输出了横向展开方案时传入，覆盖模板预填。
+            格式: ["措施1描述","措施2描述","措施3描述",...]
+            如果为空字符串，则使用模板预填的横向展开措施
         auto_fill: 可选，自动填充模式（默认 False）。当用户明确说「你帮我填」「给我示例」「看一下范例」「其他不要问我」时设为 True。
             启用后脚本会把所有 ____ 空白替换为合理示例值（化名/示例日期/角色分配）：
             - D1 团队姓名：张伟/李娜/王芳/刘强/陈静/赵磊/周敏/孙健（按角色分配）
@@ -1023,6 +1035,42 @@ def generate_8d_report_tool(
             else:
                 logger.warning(f"[8D] rc_summary JSON 无法解析（已尝试修复），继续用模板预填 RC")
 
+        # 如果传入了动态 D3 遏制措施，加 --containment-actions-json 参数
+        has_containment = False
+        if containment_actions and containment_actions.strip():
+            parsed_ca = _safe_parse_json(containment_actions, "containment_actions")
+            if parsed_ca is not None:
+                clean_ca_json = _json.dumps(parsed_ca, ensure_ascii=False)
+                cmd.extend(["--containment-actions-json", clean_ca_json])
+                logger.info(f"[8D] 启用动态 D3 遏制措施覆盖（{len(clean_ca_json)} chars）")
+                has_containment = True
+            else:
+                logger.warning(f"[8D] containment_actions JSON 无法解析，继续用模板预填")
+
+        # 如果传入了动态 D5-D6 永久纠正措施，加 --permanent-actions-json 参数
+        has_permanent = False
+        if permanent_actions and permanent_actions.strip():
+            parsed_pa = _safe_parse_json(permanent_actions, "permanent_actions")
+            if parsed_pa is not None:
+                clean_pa_json = _json.dumps(parsed_pa, ensure_ascii=False)
+                cmd.extend(["--permanent-actions-json", clean_pa_json])
+                logger.info(f"[8D] 启用动态 D5-D6 永久纠正措施覆盖（{len(clean_pa_json)} chars）")
+                has_permanent = True
+            else:
+                logger.warning(f"[8D] permanent_actions JSON 无法解析，继续用模板预填")
+
+        # 如果传入了动态 D7 横向展开措施，加 --yokoten-actions-json 参数
+        has_yokoten = False
+        if yokoten_actions and yokoten_actions.strip():
+            parsed_yk = _safe_parse_json(yokoten_actions, "yokoten_actions")
+            if parsed_yk is not None:
+                clean_yk_json = _json.dumps(parsed_yk, ensure_ascii=False)
+                cmd.extend(["--yokoten-actions-json", clean_yk_json])
+                logger.info(f"[8D] 启用动态 D7 横向展开措施覆盖（{len(clean_yk_json)} chars）")
+                has_yokoten = True
+            else:
+                logger.warning(f"[8D] yokoten_actions JSON 无法解析，继续用模板预填")
+
         # 🔴 关键修复：auto_fill 只能由用户明确要求触发
         # 用户给根因线索（five_why_steps）≠ 要示例，只是让 5Why 更精准
         # 只有用户明确说"示例/随便填/你帮我填"时，Agent 才会传 auto_fill=True
@@ -1081,6 +1129,12 @@ def generate_8d_report_tool(
                     modes_enabled.append("动态 5Why 覆盖（已填入您推演的根因路径）")
                 if has_rc_summary:
                     modes_enabled.append("动态 RC 覆盖（已填入您推演的 RC1/RC2/RC3）")
+                if has_containment:
+                    modes_enabled.append("动态 D3 遏制措施覆盖")
+                if has_permanent:
+                    modes_enabled.append("动态 D5-D6 CA 措施覆盖")
+                if has_yokoten:
+                    modes_enabled.append("动态 D7 横向展开覆盖")
                 if auto_fill:
                     modes_enabled.append("自动填充模式（人名/日期/责任人已填示例值）")
                 modes_str = " + ".join(modes_enabled) if modes_enabled else "默认模式（空白处留 ____）"

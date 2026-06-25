@@ -3474,7 +3474,8 @@ def _write_rows_to_xlsx_sheet(wb, ws, rows_data, start_row,
         """计算文本在指定列宽下需要的行数（考虑 CJK 宽度和显式换行符）。"""
         if not text:
             return 1
-        effective_width = max(col_w - 2, 4)  # 减去单元格内边距
+        # 实际文本区宽度：列宽减去单元格内边距（约4字符宽）
+        effective_width = max(col_w - 4, 3)
         segments = text.split('\n')
         total_lines = 0
         for segment in segments:
@@ -3482,11 +3483,12 @@ def _write_rows_to_xlsx_sheet(wb, ws, rows_data, start_row,
                 total_lines += 1  # 空行也算一行
                 continue
             seg_w = _display_width(segment)
-            lines_needed = max(1, (seg_w + effective_width - 1) // effective_width)
+            lines_needed = max(1, -(-seg_w // effective_width))  # 向上取整 ceil(a/b)
             total_lines += lines_needed
         return max(1, total_lines)
 
-    LINE_HEIGHT = 18  # 每行高度（磅），适合10-11号字
+    LINE_HEIGHT = 22  # 每行高度（磅），确保10-11号字完整显示
+    ROW_PADDING = 8   # 上下边距（磅）
     for row_idx_offset, row in enumerate(rows_data):
         row_idx = table_start_row + row_idx_offset
         max_lines = 1
@@ -3496,7 +3498,8 @@ def _write_rows_to_xlsx_sheet(wb, ws, rows_data, start_row,
             col_w = ws.column_dimensions[col_letter].width or 10
             line_count = _calc_line_count(clean_text, col_w)
             max_lines = max(max_lines, line_count)
-        calculated_height = max(20, min(409, max_lines * LINE_HEIGHT))
+        # 行高 = 行数 × 每行高度 + 上下边距
+        calculated_height = max(25, min(409, max_lines * LINE_HEIGHT + ROW_PADDING))
         ws.row_dimensions[row_idx].height = calculated_height
     
     # 返回下一段内容应写入的起始行（表格末尾 + 2 行空行作为视觉间隔）

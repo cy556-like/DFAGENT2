@@ -296,19 +296,20 @@ def _display_width(s: str) -> int:
     return w
 
 
-def _calc_row_height(row_data, col_widths, line_height=18, min_height=20, max_height=409):
-    """根据单元格内容和列宽精确计算行高。
+def _calc_row_height(row_data, col_widths, line_height=22, min_height=25, max_height=409):
+    """根据单元格内容和列宽精确计算行高，确保所有文字完全显示。
 
-    考虑因素：
-    - 每个单元格的文本显示宽度（CJK 字符算2，英文算1）
-    - 该列的列宽决定换行数
-    - 显式换行符 \\n 也会增加行数
-    - 取所有单元格中最大行数，乘以每行高度
+    核心逻辑：
+    1. 遍历当前行每个单元格，计算该单元格文本在该列宽度下需要换几行
+    2. 取所有单元格中最大的行数（即"最占行数的那一列"决定整行高度）
+    3. 行高 = 最大行数 × 每行高度 + 上下边距
+
+    CJK 字符宽度按英文2倍计算，显式换行符 \\n 也增加行数。
 
     Args:
         row_data: 该行各列的值列表
-        col_widths: 各列宽度列表（Excel 列宽单位，约等于字符数）
-        line_height: 每行高度（磅），默认18，适合10-11号字
+        col_widths: 各列宽度列表（Excel 列宽单位，约等于英文字符数）
+        line_height: 每行高度（磅），默认22，确保10-11号字完整显示
         min_height: 最小行高
         max_height: 最大行高（Excel 最大409磅）
 
@@ -322,8 +323,9 @@ def _calc_row_height(row_data, col_widths, line_height=18, min_height=20, max_he
             continue
         # 获取该列宽度（默认10）
         col_w = col_widths[col_idx] if col_idx < len(col_widths) else 10
-        # Excel 列宽约为可容纳的英文字符数，但实际显示宽度需要减去边距
-        effective_width = max(col_w - 2, 4)  # 减去单元格内边距
+        # 实际文本区宽度：列宽减去单元格内边距（约4字符宽）
+        # 必须留足边距，否则估算行数偏少导致文字被截断
+        effective_width = max(col_w - 4, 3)
 
         # 按显式换行符分段计算
         segments = text.split('\n')
@@ -333,13 +335,15 @@ def _calc_row_height(row_data, col_widths, line_height=18, min_height=20, max_he
                 total_lines += 1  # 空行也算一行
                 continue
             seg_display_w = _display_width(segment)
-            # 计算该段需要几行
-            lines_needed = max(1, (seg_display_w + effective_width - 1) // effective_width)
+            # 向上取整计算该段需要几行
+            lines_needed = -(-seg_display_w // effective_width)  # 等价于 ceil(a/b)
+            lines_needed = max(1, lines_needed)
             total_lines += lines_needed
 
         max_lines = max(max_lines, total_lines)
 
-    calculated_height = max_lines * line_height
+    # 行高 = 行数 × 每行高度 + 上下边距(8磅)
+    calculated_height = max_lines * line_height + 8
     return max(min_height, min(max_height, calculated_height))
 
 

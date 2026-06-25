@@ -285,6 +285,64 @@ def apply_subheader_style(cell):
     cell.border = get_thin_border()
 
 
+def _display_width(s: str) -> int:
+    """计算字符串的显示宽度（中文≈2，英文≈1），用于行高估算。"""
+    w = 0
+    for ch in str(s):
+        if '\u4e00' <= ch <= '\u9fff' or '\u3000' <= ch <= '\u303f' or '\uff00' <= ch <= '\uffef':
+            w += 2
+        else:
+            w += 1
+    return w
+
+
+def _calc_row_height(row_data, col_widths, line_height=18, min_height=20, max_height=409):
+    """根据单元格内容和列宽精确计算行高。
+
+    考虑因素：
+    - 每个单元格的文本显示宽度（CJK 字符算2，英文算1）
+    - 该列的列宽决定换行数
+    - 显式换行符 \\n 也会增加行数
+    - 取所有单元格中最大行数，乘以每行高度
+
+    Args:
+        row_data: 该行各列的值列表
+        col_widths: 各列宽度列表（Excel 列宽单位，约等于字符数）
+        line_height: 每行高度（磅），默认18，适合10-11号字
+        min_height: 最小行高
+        max_height: 最大行高（Excel 最大409磅）
+
+    Returns:
+        int: 计算出的行高（磅）
+    """
+    max_lines = 1
+    for col_idx, value in enumerate(row_data):
+        text = str(value) if value is not None else ""
+        if not text:
+            continue
+        # 获取该列宽度（默认10）
+        col_w = col_widths[col_idx] if col_idx < len(col_widths) else 10
+        # Excel 列宽约为可容纳的英文字符数，但实际显示宽度需要减去边距
+        effective_width = max(col_w - 2, 4)  # 减去单元格内边距
+
+        # 按显式换行符分段计算
+        segments = text.split('\n')
+        total_lines = 0
+        for segment in segments:
+            if not segment.strip():
+                total_lines += 1  # 空行也算一行
+                continue
+            seg_display_w = _display_width(segment)
+            # 计算该段需要几行
+            lines_needed = max(1, (seg_display_w + effective_width - 1) // effective_width)
+            total_lines += lines_needed
+
+        max_lines = max(max_lines, total_lines)
+
+    calculated_height = max_lines * line_height
+    return max(min_height, min(max_height, calculated_height))
+
+
 def set_column_widths(ws, widths):
     """设置列宽。"""
     for i, w in enumerate(widths, start=1):
@@ -316,9 +374,9 @@ def write_table(ws, start_row, headers, rows, col_widths, root_cause_row_indices
             cell = ws.cell(row=current_row, column=col_idx, value=value)
             is_rc = i in root_cause_row_indices
             apply_body_style(cell, i, is_root_cause=is_rc)
-        # 自动行高（根据内容长度估算）
-        max_len = max((len(str(v)) for v in row_data), default=10)
-        ws.row_dimensions[current_row].height = max(20, min(80, 15 + max_len // 4))
+        # 自动行高：根据每个单元格内容和列宽精确计算换行数，确保文字完全可见
+        row_height = _calc_row_height(row_data, col_widths)
+        ws.row_dimensions[current_row].height = row_height
 
     # 设置列宽
     set_column_widths(ws, col_widths)
@@ -392,7 +450,9 @@ def write_kv_block(ws, start_row, kv_pairs, label_col_width=22, value_col_width=
         value_cell.font = get_body_font()
         value_cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         value_cell.border = get_thin_border()
-        ws.row_dimensions[current_row].height = max(20, min(60, 15 + len(str(value)) // 6))
+        ws.row_dimensions[current_row].height = _calc_row_height(
+            [label, value], [label_col_width, value_col_width]
+        )
 
     set_column_widths(ws, [label_col_width, value_col_width])
     return start_row + len(kv_pairs)
@@ -883,7 +943,7 @@ def generate_excel(context, template, output_path, report_number, auto_fill=Fals
     cell.font = get_body_font()
     cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
     cell.border = get_thin_border()
-    ws.row_dimensions[row].height = 60
+    ws.row_dimensions[row].height = _calc_row_height([problem_stmt], [62])  # 合并列总宽 ≈ 22+40
     row += 1
 
     # D1 团队
@@ -1030,7 +1090,7 @@ def generate_excel(context, template, output_path, report_number, auto_fill=Fals
         cell.font = get_body_font()
         cell.alignment = Alignment(horizontal="left", vertical="center", wrap_text=True)
         cell.border = get_thin_border()
-        ws.row_dimensions[row].height = max(30, min(120, 15 + len(verify_text) // 4))
+        ws.row_dimensions[row].height = _calc_row_height([verify_text], [92])  # 合并列总宽 ≈ 22+70
     else:
         row = write_kv_block(ws, row, [
             ("验证方法", "____（现场观察 / 数据收集 / 重现试验）"),

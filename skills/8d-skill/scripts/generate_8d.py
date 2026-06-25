@@ -296,7 +296,7 @@ def _display_width(s: str) -> int:
     return w
 
 
-def _calc_row_height(row_data, col_widths, line_height=22, min_height=25, max_height=409):
+def _calc_row_height(row_data, col_widths, line_height=17, min_height=20, max_height=409):
     """根据单元格内容和列宽精确计算行高，确保所有文字完全显示。
 
     核心逻辑：
@@ -323,9 +323,9 @@ def _calc_row_height(row_data, col_widths, line_height=22, min_height=25, max_he
             continue
         # 获取该列宽度（默认10）
         col_w = col_widths[col_idx] if col_idx < len(col_widths) else 10
-        # 实际文本区宽度：列宽减去单元格内边距（约4字符宽）
-        # 必须留足边距，否则估算行数偏少导致文字被截断
-        effective_width = max(col_w - 4, 3)
+        # 实际文本区宽度：列宽减去单元格内边距（约3字符宽）
+        # 留适当边距，既确保文字不截断又避免行高过大
+        effective_width = max(col_w - 3, 4)
 
         # 按显式换行符分段计算
         segments = text.split('\n')
@@ -342,12 +342,12 @@ def _calc_row_height(row_data, col_widths, line_height=22, min_height=25, max_he
 
         max_lines = max(max_lines, total_lines)
 
-    # 行高 = 行数 × 每行高度 + 上下边距(8磅)
-    calculated_height = max_lines * line_height + 8
+    # 行高 = 行数 × 每行高度 + 上下边距(4磅)
+    calculated_height = max_lines * line_height + 4
     return max(min_height, min(max_height, calculated_height))
 
 
-def _recalc_all_row_heights(ws, line_height=22, min_height=25, max_height=409):
+def _recalc_all_row_heights(ws, line_height=17, min_height=20, max_height=409):
     """重新计算整个工作表所有行的行高（基于实际单元格内容和列宽）。
 
     这是在所有内容写入完成、auto_fill 执行完毕后调用的最终修正步骤。
@@ -387,7 +387,7 @@ def _recalc_all_row_heights(ws, line_height=22, min_height=25, max_height=409):
                     break
 
             # 计算行数
-            effective_width = max(effective_width - 4, 3)
+            effective_width = max(effective_width - 3, 4)
             segments = text.split('\n')
             total_lines = 0
             for segment in segments:
@@ -400,7 +400,7 @@ def _recalc_all_row_heights(ws, line_height=22, min_height=25, max_height=409):
             max_lines = max(max_lines, max(1, total_lines))
 
         if has_content:
-            calculated_height = max_lines * line_height + 8
+            calculated_height = max_lines * line_height + 4
             ws.row_dimensions[row_idx].height = max(min_height, min(max_height, calculated_height))
 
 
